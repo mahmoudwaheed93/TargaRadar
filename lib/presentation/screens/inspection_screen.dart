@@ -83,7 +83,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
 
   Future<void> _export(InspectionProvider insp) async {
     final name = context.read<CarRecordProvider>().recorderName;
-    final path = await insp.exportSession(name);
+    final path = await insp.exportSession(recorderName: name);
     if (path == null) {
       _snack('مفيش لوحات متسجلة للتصدير', color: AppColors.warning);
     } else {

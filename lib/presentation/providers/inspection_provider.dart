@@ -337,7 +337,7 @@ class InspectionProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<String?> exportSession({required String recorderName}) async {
+  Future<String?> exportSession({String recorderName = ''}) async {
     final active = _entries.where((e) => !e.cancelled).toList();
     if (active.isEmpty) return null;
 
