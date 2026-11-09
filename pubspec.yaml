@@ -1,0 +1,72 @@
+﻿name: car_logix
+description: "CarLogix - Vehicle Record & Audit Management System"
+publish_to: 'none'
+
+version: 1.0.1+2002
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # State Management
+  provider: ^6.1.2
+
+  # Localization & RTL
+  easy_localization: ^3.0.7
+
+  # Storage & Local Database
+  shared_preferences: ^2.3.5
+  sqflite: ^2.4.1
+  path: ^1.9.1
+  path_provider: ^2.1.5
+
+  # Data Export
+  excel: ^4.0.6
+  # Streaming ZIP inflate + XML event parsing for the in-app Excel → CSV
+  # conversion: the workbook is read part by part instead of in one block.
+  archive: ^3.6.1
+  xml: ^6.6.1
+
+  # Location Services & GPS
+  geolocator: ^13.0.2
+  geocoding: ^5.0.0
+
+  # Voice Recognition
+  speech_to_text: ^7.0.0
+
+  # Keeps the screen awake while a large reference file is read, so a sleeping
+  # phone cannot suspend the loading isolate mid-way.
+  wakelock_plus: ^1.2.0
+
+  # Networking (AI extraction via Hugging Face Inference API)
+  http: ^1.2.0
+
+  # Icons & Utilities
+  cupertino_icons: ^1.0.8
+  intl: any
+  file_picker: ^13.1.0
+  share_plus: ^13.3.0
+  firebase_core: ^4.15.0
+  cloud_firestore: ^6.10.0
+  url_launcher: ^6.3.2
+  font_awesome_flutter: ^11.0.0
+  firebase_auth: ^6.7.0
+  audioplayers: ^6.8.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/translations/
+    - assets/images/
+    - assets/sounds/

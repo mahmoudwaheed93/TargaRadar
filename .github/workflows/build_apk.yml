@@ -1,0 +1,56 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build APK (Release)
+        run: flutter build apk --release
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AIMS-Mobile-Release-APK
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
+        with:
+          tag_name: v1.0.1
+          name: "AIMS-Mobile v1.0.1 (Fast AI Voice Engine)"
+          draft: false
+          prerelease: false
+          make_latest: true
+          body: |
+            ## 🚗 AIMS-Mobile APK Release
+            - Ultra-fast Arabic Voice Plate Extraction (0ms local normalizer).
+            - Qwen2.5-1.5B AI Fallback Engine.
+            - Continuous speech dictation support.
+          files: build/app/outputs/flutter-apk/app-release.apk

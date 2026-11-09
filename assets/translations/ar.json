@@ -1,0 +1,17 @@
+﻿{
+  "app_name": "صقر المملكة",
+  "plate_number": "رقم اللوحة",
+  "car_type": "نوع السيارة",
+  "district": "الحي",
+  "street": "الشارع",
+  "recorder_name": "اسم المسجّل",
+  "registration_date": "تاريخ التسجيل",
+  "notes": "الملاحظات",
+  "gps_url": "رابط الموقع",
+  "save": "حفظ",
+  "cancel": "إلغاء",
+  "export_excel": "تصدير إلى Excel",
+  "fetch_location": "تحديد الموقع الحالي",
+  "start_voice": "بدء الإدخال الصوتي",
+  "stop_voice": "إيقاف الإدخال الصوتي"
+}

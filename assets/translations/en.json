@@ -1,0 +1,17 @@
+﻿{
+  "app_name": "Saqr Al Mamlaka",
+  "plate_number": "Plate Number",
+  "car_type": "Car Type",
+  "district": "District",
+  "street": "Street",
+  "recorder_name": "Recorder Name",
+  "registration_date": "Registration Date",
+  "notes": "Notes",
+  "gps_url": "Location Link",
+  "save": "Save",
+  "cancel": "Cancel",
+  "export_excel": "Export to Excel",
+  "fetch_location": "Fetch Current Location",
+  "start_voice": "Start Voice Input",
+  "stop_voice": "Stop Voice Input"
+}
