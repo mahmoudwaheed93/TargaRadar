@@ -33,28 +33,38 @@ jobs:
       - name: Build APK (Release)
         run: |
           flutter build apk --release
-          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/AIMS-Mobile-v1.0.1.apk
+          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/AIMS-Mobile-v1.0.2.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIMS-Mobile-Release-APK
-          path: build/app/outputs/flutter-apk/AIMS-Mobile-v1.0.1.apk
+          path: build/app/outputs/flutter-apk/AIMS-Mobile-v1.0.2.apk
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
         with:
-          tag_name: v1.0.1
-          name: "AIMS-Mobile v1.0.1 (Fast AI Voice Engine)"
+          tag_name: v1.0.2
+          name: "AIMS-Mobile v1.0.2 (Optimized Voice Engine)"
           draft: false
           prerelease: false
           make_latest: true
           body: |
-            ## 🚗 AIMS-Mobile APK Release
-            - Ultra-fast Arabic Voice Plate Extraction (0ms local normalizer).
-            - Qwen2.5-1.5B AI Fallback Engine.
-            - Continuous speech dictation support.
+            ## 🚗 AIMS-Mobile APK v1.0.2 — Performance Update
+
+            ### ✅ تحسينات الأداء (Performance Optimizations)
+            - **O(1) note update**: تحديث الملاحظات بـ HashMap بدل O(n) scan.
+            - **Getter `recentRecords`**: محسوب لحظياً — لا نسخ زائدة.
+            - **Race condition fix**: حذف ثم إدراج DB مرتبط في سلسلة واحدة.
+            - **Guard `notifyListeners`**: لا إشعار إلا لو البيانات تغيّرت فعلاً.
+            - **Regex digit count**: `RegExp` معاد الاستخدام بدل حلقة حرفية.
+            - **Shift-index on insert/delete**: الـ reverse-index تتحدث تلقائياً.
+
+            ### 🎙️ Ultra-Fast Arabic Voice Plate Extraction
+            - 0ms immediate plate ingestion with in-place prefix upgrade.
+            - Qwen2.5-1.5B AI Fallback Engine (300ms debounce).
+            - Continuous Arabic speech dictation support.
           files: |
-            build/app/outputs/flutter-apk/AIMS-Mobile-v1.0.1.apk
+            build/app/outputs/flutter-apk/AIMS-Mobile-v1.0.2.apk
             build/app/outputs/flutter-apk/app-release.apk

@@ -1,8 +1,8 @@
-﻿name: car_logix
+name: car_logix
 description: "CarLogix - Vehicle Record & Audit Management System"
 publish_to: 'none'
 
-version: 1.0.1+2002
+version: 1.0.2+2003
 
 environment:
   sdk: ^3.12.2

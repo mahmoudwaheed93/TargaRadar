@@ -18,7 +18,6 @@ class CarRecordProvider extends ChangeNotifier {
   final SpeechService _speechService = SpeechService.instance;
 
   List<CarRecord> _records = [];
-  List<CarRecord> _recentRecords = [];
   bool _isLoading = false;
   bool _isSaving = false;
   bool _isExporting = false;
@@ -49,6 +48,10 @@ class CarRecordProvider extends ChangeNotifier {
   final Set<String> _recordedPlates = {};
   final Map<String, int> _recordIds = {};
   final Map<String, String> _latestNote = {};
+
+  /// O(1) reverse lookup: rowId → index in _records (avoids O(n) indexWhere)
+  final Map<int, int> _rowIdToIndex = {};
+
   String? _lastKey;
   String? _lastLettersKey;
   String? _lastDigits;
@@ -63,9 +66,15 @@ class CarRecordProvider extends ChangeNotifier {
   bool _recorderLoaded = false;
   String _currentUserId = '';
 
+  // ── Digit-count regex reused across calls ────────────────────────────────
+  static final RegExp _digitRx = RegExp(r'\d');
+
   String get recorderName => _recorderName;
   List<CarRecord> get records => _records;
-  List<CarRecord> get recentRecords => _recentRecords;
+
+  /// Computed getter — always fresh, no stale copies.
+  List<CarRecord> get recentRecords => _records.take(10).toList();
+
   bool get isLoading => _isLoading;
   bool get isSaving => _isSaving;
   bool get isExporting => _isExporting;
@@ -93,6 +102,7 @@ class CarRecordProvider extends ChangeNotifier {
     _recordedPlates.clear();
     _recordIds.clear();
     _latestNote.clear();
+    _rowIdToIndex.clear();
     _lastKey = null;
     _lastLettersKey = null;
     _lastDigits = null;
@@ -112,9 +122,13 @@ class CarRecordProvider extends ChangeNotifier {
     if (_recorderLoaded) return;
     try {
       final prefs = await SharedPreferences.getInstance();
-      _recorderName = prefs.getString(_recorderKey) ?? '';
+      final loaded = prefs.getString(_recorderKey) ?? '';
       _recorderLoaded = true;
-      notifyListeners();
+      // Only notify when the value actually changed
+      if (loaded != _recorderName) {
+        _recorderName = loaded;
+        notifyListeners();
+      }
     } catch (e) {
       debugPrint('Failed to load recorder name: $e');
     }
@@ -182,7 +196,12 @@ class CarRecordProvider extends ChangeNotifier {
     notifyListeners();
     try {
       _records = await _dbHelper.getAllCarRecords();
-      _recentRecords = _records.take(10).toList();
+      // Rebuild O(1) reverse-index after full reload
+      _rowIdToIndex.clear();
+      for (int i = 0; i < _records.length; i++) {
+        final id = _records[i].id;
+        if (id != null) _rowIdToIndex[id] = i;
+      }
     } catch (e) {
       debugPrint('Error loading records: $e');
     } finally {
@@ -340,21 +359,36 @@ class CarRecordProvider extends ChangeNotifier {
         owner: auditLog.owner,
       );
       _records[0] = upgraded;
-      _recentRecords = _records.take(10).toList();
+      // Rebuild rowIdToIndex entry for index 0 (prev id stays same until DB resolves)
+      final prevId = prev.id;
+      if (prevId != null) _rowIdToIndex[prevId] = 0;
+
       final oldRowId = _recordIds.remove(oldKey);
+      // Chain delete → insert to avoid race condition
       if (oldRowId != null) {
-        unawaited(_dbHelper.deleteCarRecord(oldRowId));
+        _rowIdToIndex.remove(oldRowId);
+        unawaited(
+          _dbHelper.deleteCarRecord(oldRowId).then((_) =>
+            _dbHelper.insertCarRecord(upgraded).then((newId) {
+              _recordIds[norm] = newId;
+              // O(1) index lookup instead of O(n) indexOf
+              final idx = _rowIdToIndex[prevId] ?? 0;
+              _records[idx] = upgraded.copyWith(id: newId);
+              _rowIdToIndex.remove(prevId);
+              _rowIdToIndex[newId] = idx;
+            }),
+          ),
+        );
+      } else {
+        unawaited(
+          _dbHelper.insertCarRecord(upgraded).then((newId) {
+            _recordIds[norm] = newId;
+            _records[0] = upgraded.copyWith(id: newId);
+            _rowIdToIndex[newId] = 0;
+          }),
+        );
       }
-      unawaited(
-        _dbHelper.insertCarRecord(upgraded).then((newId) {
-          _recordIds[norm] = newId;
-          final idx = _records.indexOf(upgraded);
-          if (idx != -1) {
-            _records[idx] = upgraded.copyWith(id: newId);
-            _recentRecords = _records.take(10).toList();
-          }
-        }),
-      );
+
       if (auditLog.isMatched) {
         onPlateAdded(plateData.fullPlate, true, upgraded.carType);
       }
@@ -404,18 +438,18 @@ class CarRecordProvider extends ChangeNotifier {
     );
 
     _records.insert(0, record);
-    _recentRecords = _records.take(10).toList();
+    // Shift all existing indices up by 1
+    _rowIdToIndex.updateAll((id, idx) => idx + 1);
+
     onPlateAdded(plateData.fullPlate, auditLog.isMatched, resolvedCarType);
     notifyListeners();
 
     unawaited(
       _dbHelper.insertCarRecord(record).then((newId) {
         _recordIds[norm] = newId;
-        final idx = _records.indexOf(record);
-        if (idx != -1) {
-          _records[idx] = record.copyWith(id: newId);
-          _recentRecords = _records.take(10).toList();
-        }
+        // O(1) index via rowIdToIndex; new record is at index 0
+        _records[0] = record.copyWith(id: newId);
+        _rowIdToIndex[newId] = 0;
       }),
     );
   }
@@ -427,11 +461,8 @@ class CarRecordProvider extends ChangeNotifier {
     Function(String plate, bool isMatched, String carModel) onPlateAdded,
   ) {
     if (!AiPlateRefiner.instance.isEnabled) return;
-    int digitCount = 0;
-    for (int i = 0; i < normalized.length; i++) {
-      final c = normalized.codeUnitAt(i);
-      if (c >= 0x30 && c <= 0x39) digitCount++;
-    }
+    // Use RegExp for clarity and speed — reuse compiled pattern
+    final digitCount = _digitRx.allMatches(normalized).length;
     if (digitCount < 3) return;
 
     _aiTimer?.cancel();
@@ -455,12 +486,11 @@ class CarRecordProvider extends ChangeNotifier {
         line,
         stickyNote: _stickyNote,
       );
-      if (extracted.isNotEmpty) {
-        for (final p in extracted) {
-          final before = _recordedPlates.length;
-          _ingestPlate(p, sortAuditProvider, onPlateAdded);
-          if (_recordedPlates.length > before) count++;
-        }
+      for (final p in extracted) {
+        final before = _recordedPlates.length;
+        _ingestPlate(p, sortAuditProvider, onPlateAdded);
+        // O(1) set-length comparison — detects if plate was truly new
+        if (_recordedPlates.length > before) count++;
       }
     }
     return count;
@@ -518,8 +548,11 @@ class CarRecordProvider extends ChangeNotifier {
         _recordedPlates.add(key);
         _recordIds[key] = id;
       }
-      _records.insert(0, record.copyWith(id: id));
-      _recentRecords = _records.take(10).toList();
+      final saved = record.copyWith(id: id);
+      // Shift existing indices before inserting at 0
+      _rowIdToIndex.updateAll((rid, idx) => idx + 1);
+      _records.insert(0, saved);
+      _rowIdToIndex[id] = 0;
       return true;
     } catch (e) {
       debugPrint('Error saving car record: $e');
@@ -536,10 +569,10 @@ class CarRecordProvider extends ChangeNotifier {
     if (rowId == null || note == null) return;
     try {
       await _dbHelper.updateCarRecordNotes(rowId, note);
-      final idx = _records.indexWhere((r) => r.id == rowId);
-      if (idx != -1) {
+      // O(1) lookup via reverse-index map — no linear scan
+      final idx = _rowIdToIndex[rowId];
+      if (idx != null && idx < _records.length) {
         _records[idx] = _records[idx].copyWith(notes: note);
-        _recentRecords = _records.take(10).toList();
         notifyListeners();
       }
     } catch (e) {
@@ -565,8 +598,18 @@ class CarRecordProvider extends ChangeNotifier {
   Future<void> deleteRecord(int id) async {
     try {
       await _dbHelper.deleteCarRecord(id);
-      _records.removeWhere((r) => r.id == id);
-      _recentRecords = _records.take(10).toList();
+      final idx = _rowIdToIndex.remove(id);
+      if (idx != null && idx < _records.length) {
+        _records.removeAt(idx);
+        // Fix indices for all records after the deleted one
+        for (final entry in _rowIdToIndex.entries.toList()) {
+          if (entry.value > idx) {
+            _rowIdToIndex[entry.key] = entry.value - 1;
+          }
+        }
+      } else {
+        _records.removeWhere((r) => r.id == id);
+      }
       notifyListeners();
     } catch (e) {
       debugPrint('Error deleting record: $e');
@@ -577,7 +620,7 @@ class CarRecordProvider extends ChangeNotifier {
     try {
       await _dbHelper.clearAllRecords();
       _records.clear();
-      _recentRecords.clear();
+      _rowIdToIndex.clear();
       _recordedPlates.clear();
       _recordIds.clear();
       _latestNote.clear();
