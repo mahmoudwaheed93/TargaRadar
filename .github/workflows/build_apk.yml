@@ -36,7 +36,7 @@ jobs:
       - name: Build APK (Release)
         run: |
           flutter build apk --release
-          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/AIMS-Mobile-v1.0.4.apk
+          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/AIMS-Mobile-v1.0.5.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -48,19 +48,17 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
         with:
-          tag_name: v1.0.4
-          name: "AIMS-Mobile v1.0.4 (Client API & Strict Note Validation)"
+          tag_name: v1.0.5
+          name: "AIMS-Mobile v1.0.5 (Restored Inspection Location & Reference Columns)"
           draft: false
           prerelease: false
           make_latest: true
           body: |
-            ## 🚗 AIMS-Mobile / TargaRadar APK Release v1.0.3
-            - Ultra-fast flexible speech engine: captures Brand, Plate, and Notes in ANY order with 0ms latency.
-            - Full support for Digits-First speech (e.g. "2816 د ب ن") and Compound numbers.
-            - Overhauled In-Place Live Upgrade for Brand and Note streams.
-            - Standalone Orphan Brand/Note speech detection.
-            - Expanded car brand directory (>70 models) and comprehensive Egyptian/Saudi note keywords.
-            - Pre-configured Groq LPU AI Fallback Engine.
+            ## 🚗 AIMS-Mobile / TargaRadar APK Release v1.0.5
+            - Restored Location (Google Maps link) and all original reference sheet columns in Inspection export Excel.
+            - Pre-configured Groq LPU AI Fallback Engine with client API key.
+            - Strict note filter: rejects random letters and only registers explicit notes or verified keywords.
+            - Inspection voice filter: strictly captures plate numbers without stray notes.
           files: |
             build/app/outputs/flutter-apk/app-release.apk
-            build/app/outputs/flutter-apk/AIMS-Mobile-v1.0.4.apk
+            build/app/outputs/flutter-apk/AIMS-Mobile-v1.0.5.apk

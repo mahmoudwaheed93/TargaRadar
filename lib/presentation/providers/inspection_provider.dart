@@ -1,3 +1,4 @@
+import '../../core/services/location_service.dart';
 import '../../data/models/excel_vehicle_model.dart';
 import '../../core/utils/date_formatter.dart';
 import 'dart:async';
@@ -17,6 +18,7 @@ class InspectionEntry {
   final Map<String, String> rowData; // full row from the reference sheet
   final String note;
   final bool cancelled;
+  final String gpsUrl;
 
   const InspectionEntry({
     required this.id,
@@ -27,9 +29,10 @@ class InspectionEntry {
     required this.rowData,
     required this.note,
     this.cancelled = false,
+    this.gpsUrl = '',
   });
 
-  InspectionEntry copyWith({String? note, bool? cancelled}) => InspectionEntry(
+  InspectionEntry copyWith({String? note, bool? cancelled, String? gpsUrl}) => InspectionEntry(
         id: id,
         plate: plate,
         key: key,
@@ -38,6 +41,7 @@ class InspectionEntry {
         rowData: rowData,
         note: note ?? this.note,
         cancelled: cancelled ?? this.cancelled,
+        gpsUrl: gpsUrl ?? this.gpsUrl,
       );
 }
 
@@ -60,6 +64,27 @@ class InspectionProvider extends ChangeNotifier {
   bool _isListening = false;
   int _timer = 0;
   Timer? _ticker;
+  LocationDetails? _lastKnownLocation;
+  bool _locRefreshing = false;
+  DateTime? _locAt;
+
+  Future<void> _refreshLocation() async {
+    if (_locRefreshing) return;
+    final at = _locAt;
+    if (at != null && DateTime.now().difference(at).inSeconds < 60) return;
+    _locRefreshing = true;
+    try {
+      final l = await LocationService.instance.getCurrentLocationDetails();
+      if (l != null) {
+        _lastKnownLocation = l;
+        _locAt = DateTime.now();
+      }
+    } catch (e) {
+      debugPrint('Location refresh error in inspection: $e');
+    } finally {
+      _locRefreshing = false;
+    }
+  }
   Timer? _incompletePlateTimer;
   String? _lastKey;
   int _orphanSession = -1;
@@ -117,6 +142,7 @@ class InspectionProvider extends ChangeNotifier {
           rowData: row ?? const {},
           note: e.note,
           cancelled: e.cancelled,
+          gpsUrl: e.gpsUrl,
         );
       }
       return true;
@@ -200,6 +226,7 @@ class InspectionProvider extends ChangeNotifier {
           inSheet: row != null,
           rowData: row ?? const {},
           note: note.isNotEmpty ? note : prev.note,
+          gpsUrl: prev.gpsUrl,
         );
         _entries[0] = updated;
         if (updated.inSheet) onMatch(updated);
@@ -221,6 +248,7 @@ class InspectionProvider extends ChangeNotifier {
       inSheet: row != null,
       rowData: row ?? const {},
       note: note,
+      gpsUrl: _lastKnownLocation?.gpsUrl ?? '',
     );
     _entries.insert(0, entry);
     if (entry.inSheet) onMatch(entry);
@@ -228,6 +256,7 @@ class InspectionProvider extends ChangeNotifier {
   }
 
   Future<void> startListening({required void Function(InspectionEntry entry) onMatch}) async {
+    unawaited(_refreshLocation());
     if (_isListening) return;
     _orphanSession = -1;
     _isListening = true;
@@ -294,6 +323,7 @@ class InspectionProvider extends ChangeNotifier {
         inSheet: row != null,
         rowData: row ?? const {},
         note: '',
+        gpsUrl: _lastKnownLocation?.gpsUrl ?? '',
       );
       _entries.insert(0, entry);
       if (entry.inSheet) {
@@ -348,33 +378,72 @@ class InspectionProvider extends ChangeNotifier {
     if (def != null) excel.rename(def, name);
     final ws = excel[name];
 
-    ws.appendRow([
+    // Reference sheet headers + Location + Standard columns
+    final extraHeaders = _table?.headers ?? const [];
+    final headers = <CellValue>[
       TextCellValue('م'),
       TextCellValue('رقم اللوحة'),
       TextCellValue('الحالة'),
       TextCellValue('ملاحظات'),
       TextCellValue('الوقت'),
       TextCellValue('اسم المسجّل'),
-    ]);
+      TextCellValue('رابط الموقع (Google Maps)'),
+      ...extraHeaders.map((h) => TextCellValue(h)),
+    ];
+
+    ws.appendRow(headers);
 
     for (int i = 0; i < active.length; i++) {
       final e = active[i];
-      ws.appendRow([
+
+      // Retrieve location URL: live GPS or from reference sheet rowData
+      String locUrl = e.gpsUrl;
+      if (locUrl.isEmpty) {
+        for (final entry in e.rowData.entries) {
+          final k = entry.key;
+          final v = entry.value;
+          if (k.contains('موقع') || k.contains('خريطة') || k.contains('خرائط') || k.toLowerCase().contains('gps') || v.contains('http') || v.contains('maps')) {
+            if (v.isNotEmpty) {
+              locUrl = v;
+              break;
+            }
+          }
+        }
+      }
+      if (locUrl.isEmpty) locUrl = '-';
+
+      final row = <CellValue>[
         TextCellValue('${i + 1}'),
         TextCellValue(e.plate),
         TextCellValue(e.inSheet ? 'موجودة بالشيت' : 'غير موجودة بالشيت'),
         TextCellValue(e.note.isEmpty ? '-' : e.note),
         TextCellValue(e.time),
         TextCellValue(recorderName.isEmpty ? '-' : recorderName),
-      ]);
+        TextCellValue(locUrl),
+      ];
+
+      for (final h in extraHeaders) {
+        row.add(TextCellValue(e.rowData[h] ?? '-'));
+      }
+      ws.appendRow(row);
     }
 
     final cancelled = _entries.where((e) => e.cancelled).toList();
     if (cancelled.isNotEmpty) {
       final ws2 = excel['الفرزات_الملغاة'];
-      ws2.appendRow([TextCellValue('رقم اللوحة'), TextCellValue('الوقت'), TextCellValue('ملاحظات')]);
+      ws2.appendRow([
+        TextCellValue('رقم اللوحة'),
+        TextCellValue('الوقت'),
+        TextCellValue('رابط الموقع (Google Maps)'),
+        TextCellValue('ملاحظات'),
+      ]);
       for (final e in cancelled) {
-        ws2.appendRow([TextCellValue(e.plate), TextCellValue(e.time), TextCellValue(e.note.isEmpty ? '-' : e.note)]);
+        ws2.appendRow([
+          TextCellValue(e.plate),
+          TextCellValue(e.time),
+          TextCellValue(e.gpsUrl.isNotEmpty ? e.gpsUrl : '-'),
+          TextCellValue(e.note.isEmpty ? '-' : e.note),
+        ]);
       }
     }
 
