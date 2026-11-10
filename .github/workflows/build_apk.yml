@@ -30,28 +30,21 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Analyze code
-        run: |
-          flutter analyze > analyze.log 2>&1 || true
-          cat analyze.log
+      - name: Build APK (Release)
+        run: flutter build apk --release > build.log 2>&1
 
-      - name: Upload analyze log
+      - name: Upload build log
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: analyze-log
-          path: analyze.log
-
-      - name: Build APK (Release)
-        run: |
-          flutter build apk --release
-          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/AIMS-Mobile-v1.0.2.apk
+          name: build-log
+          path: build.log
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIMS-Mobile-Release-APK
-          path: build/app/outputs/flutter-apk/AIMS-Mobile-v1.0.2.apk
+          path: build/app/outputs/flutter-apk/app-release.apk
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -69,6 +62,4 @@ jobs:
             - Continuous speech dictation without audio restart delays.
             - Filtered complete plates (no partial duplicates).
             - Clean UI with demo button removed.
-          files: |
-            build/app/outputs/flutter-apk/AIMS-Mobile-v1.0.2.apk
-            build/app/outputs/flutter-apk/app-release.apk
+          files: build/app/outputs/flutter-apk/app-release.apk
