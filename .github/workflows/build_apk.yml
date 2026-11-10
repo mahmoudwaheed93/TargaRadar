@@ -30,9 +30,13 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Run Unit Tests
+        run: flutter test
+
       - name: Build APK (Release)
         run: |
           flutter build apk --release 2>&1 | tee build.log || (echo "### ❌ Build Log" >> $GITHUB_STEP_SUMMARY && echo '```' >> $GITHUB_STEP_SUMMARY && cat build.log >> $GITHUB_STEP_SUMMARY && echo '```' >> $GITHUB_STEP_SUMMARY && exit 1)
+          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/AIMS-Mobile-v1.0.3.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -44,16 +48,19 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
         with:
-          tag_name: v1.0.2
-          name: "AIMS-Mobile v1.0.2 (Ultra-Fast AI Voice Engine)"
+          tag_name: v1.0.3
+          name: "AIMS-Mobile v1.0.3 (Flexible Brand, Note & Digits-First Engine)"
           draft: false
           prerelease: false
           make_latest: true
           body: |
-            ## 🚗 AIMS-Mobile / TargaRadar APK Release v1.0.2
-            - Ultra-fast Arabic Voice Plate Extraction (0ms local normalizer).
+            ## 🚗 AIMS-Mobile / TargaRadar APK Release v1.0.3
+            - Ultra-fast flexible speech engine: captures Brand, Plate, and Notes in ANY order with 0ms latency.
+            - Full support for Digits-First speech (e.g. "2816 د ب ن") and Compound numbers.
+            - Overhauled In-Place Live Upgrade for Brand and Note streams.
+            - Standalone Orphan Brand/Note speech detection.
+            - Expanded car brand directory (>70 models) and comprehensive Egyptian/Saudi note keywords.
             - Pre-configured Groq LPU AI Fallback Engine.
-            - Continuous speech dictation without audio restart delays.
-            - Filtered complete plates (no partial duplicates).
-            - Clean UI with demo button removed.
-          files: build/app/outputs/flutter-apk/app-release.apk
+          files: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/flutter-apk/AIMS-Mobile-v1.0.3.apk

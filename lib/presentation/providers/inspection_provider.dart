@@ -146,16 +146,25 @@ class InspectionProvider extends ChangeNotifier {
   /// A note spoken alone ("ملحوظة ...") goes to the plate heard just before.
   void _handleOrphanNote(String? note, int session) {
     if (note == null) return;
-    if (session != _orphanSession) {
-      _orphanSession = session;
-      _orphanTarget = _lastKey;
+    _handleOrphanData(OrphanVoiceData(note: note), session);
+  }
+
+  void _handleOrphanData(OrphanVoiceData data, int session) {
+    if (!data.hasData || _entries.isEmpty) return;
+    final note = data.note;
+    if (note != null && note != '-' && note.isNotEmpty) {
+      if (session != _orphanSession) {
+        _orphanSession = session;
+        _orphanTarget = _lastKey;
+      }
+      final key = _orphanTarget ?? _lastKey;
+      if (key == null) return;
+      final i = _entries.indexWhere((e) => e.key == key);
+      if (i != -1 && _entries[i].note != note) {
+        _entries[i] = _entries[i].copyWith(note: note);
+        notifyListeners();
+      }
     }
-    final key = _orphanTarget;
-    if (key == null) return;
-    final i = _entries.indexWhere((e) => e.key == key);
-    if (i == -1 || _entries[i].note == note) return;
-    _entries[i] = _entries[i].copyWith(note: note);
-    notifyListeners();
   }
 
   
@@ -168,6 +177,7 @@ class InspectionProvider extends ChangeNotifier {
       final i = _entries.indexWhere((e) => e.key == key);
       if (i != -1 && note.isNotEmpty && _entries[i].note != note) {
         _entries[i] = _entries[i].copyWith(note: note);
+        notifyListeners();
       }
       return;
     }
@@ -229,6 +239,7 @@ class InspectionProvider extends ChangeNotifier {
 
     await _speech.startListening(
       onOrphanNote: _handleOrphanNote,
+      onOrphanData: _handleOrphanData,
       onResult: (raw, plates, slots, normalized) {
         _slots = slots;
 

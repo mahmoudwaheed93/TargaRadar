@@ -166,3 +166,15 @@ class ParsedPlateData {
     this.isComplete = true,
   });
 }
+
+
+/// Standalone car brand and/or note spoken without a plate
+class OrphanVoiceData {
+  final String? brand;
+  final String? note;
+
+  const OrphanVoiceData({this.brand, this.note});
+
+  bool get hasData =>
+      (brand != null && brand != '-') || (note != null && note != '-');
+}

@@ -1,25 +1,93 @@
 import '../../data/models/excel_vehicle_model.dart';
 
-/// Ultra-fast Arabic voice plate normalizer & multi-plate extractor.
+class _PlateMatch {
+  final int startIndex;
+  final int endIndex;
+  final String letters;
+  final String digits;
+  final String fullPlate;
+  final bool isDigitsFirst;
+
+  const _PlateMatch({
+    required this.startIndex,
+    required this.endIndex,
+    required this.letters,
+    required this.digits,
+    required this.fullPlate,
+    required this.isDigitsFirst,
+  });
+}
+
+class _BrandResult {
+  final String brand;
+  final List<String> remaining;
+  const _BrandResult(this.brand, this.remaining);
+}
+
+class _SplitWords {
+  final List<String> forPlate1;
+  final List<String> forPlate2;
+  const _SplitWords(this.forPlate1, this.forPlate2);
+}
+
+/// Ultra-fast Arabic voice plate normalizer, multi-plate extractor, and semantic classifier.
 /// Engineered for 0ms latency with comprehensive Egyptian & Saudi dialect support,
-/// continuous dictation parsing, and instant compound number resolution.
+/// flexible word ordering (brand / plate / note in any order), bidirectional plate matching,
+/// and live continuous dictation parsing.
 class ArabicVoiceNormalizer {
   ArabicVoiceNormalizer._();
 
+  // Comprehensive Car Brands & Models (Sorted: Multi-word first, then single-word)
   static const List<String> carBrands = [
-    'مرسيدس', 'تويوتا', 'نيسان', 'هيونداي', 'كيا', 'فورد', 'شيفروليه', 'شفروليه',
-    'النترا', 'كورولا', 'كامري', 'سوناتا', 'اكسنت', 'بي ام', 'بي ام دبليو', 'لكزس', 'مازدا', 
-    'هافال', 'جيلي', 'ام جي', 'شانجان', 'هوندا', 'ميتسوبيشي', 'سوزوكي', 'ايسوزو', 'شيري', 
-    'لاندكروزر', 'لاند كروزر', 'برادو', 'باترول', 'شاص', 'ددسن', 'هايلكس', 'افالون', 'ازيرا', 
-    'كريتا', 'توسان', 'سنتافي', 'سبورتاج', 'سيراتو', 'ريو', 'اوبتيما', 'كادينزا', 'تشارجر', 
-    'كابرس', 'تاهو', 'يوكن', 'سييرا', 'سلفرادو', 'رينجر', 'هايلاندر', 'راف فور', 'يارس'
+    // Multi-word phrases first
+    'لاند كروزر', 'لاندكروزر', 'بي ام دبليو', 'بي ام', 'جراند شيروكي', 'فورد تورس', 'فورد اكسبلورر',
+    'فورد فيوجن', 'مرسيدس بنز', 'مرسيدس', 'ام جي زد اس', 'ام جي 5', 'ام جي 6', 'ام جي',
+    'راف فور', 'سي اكس 9', 'سي اكس 5', 'جي ام سي', 'بي واي دي', 'فولكس فاجن', 'كيا k5',
+    'كيا سيراتو', 'كيا سبورتاج', 'تويوتا كامري', 'تويوتا كورولا', 'تويوتا يارس', 'تويوتا هايلكس',
+    'تويوتا برادو', 'تويوتا افالون', 'هيونداي النترا', 'هيونداي سوناتا', 'هيونداي اكسنت',
+    'هيونداي ازيرا', 'هيونداي توسان', 'هيونداي كريتا', 'هيونداي سنتافي', 'نيسان باترول',
+    'نيسان صني', 'نيسان التيما', 'نيسان مكسيما', 'شفروليه كابرس', 'شفروليه تاهو', 'شفروليه سلفرادو',
+    'دي ماكس', 'ديماكس', 'ام يو اكس',
+
+    // Single-word brands and models
+    'تويوتا', 'نيسان', 'هيونداي', 'كيا', 'فورد', 'شيفروليه', 'شفروليه', 'شفر', 'جمس',
+    'النترا', 'كورولا', 'كامري', 'سوناتا', 'اكسنت', 'ازيرا', 'افالون', 'يارس', 'تاهو', 'يوكن',
+    'لكزس', 'مازدا', 'هافال', 'جيلي', 'شانجان', 'هوندا', 'ميتسوبيشي', 'سوزوكي', 'ايسوزو', 'شيري',
+    'برادو', 'باترول', 'شاص', 'ددسن', 'هايلكس', 'فورتشنر', 'انوفا', 'كريتا', 'توسان', 'سنتافي',
+    'سبورتاج', 'سيراتو', 'ريو', 'اوبتيما', 'كادينزا', 'تشارجر', 'دورانجو', 'تشالنجر', 'كابرس',
+    'سلفرادو', 'سييرا', 'رينجر', 'هايلاندر', 'صني', 'سنترا', 'التيما', 'مكسيما', 'ماكسيما',
+    'اكورد', 'سيفيك', 'باجيرو', 'لانسر', 'ديزاير', 'سويفت', 'كولراي', 'امجراند', 'توغيلا',
+    'مونجارو', 'تيجو', 'اريزو', 'شيروكي', 'باسات', 'تيجوان', 'جولف', 'بيجو', 'رينو', 'ميجان',
+    'داستر', 'لوجان', 'فيات', 'تيبو', 'دينا', 'سطحة', 'تريلا', 'باص', 'ميكروباص', 'فان', 'وانيت'
   ];
 
+  // Comprehensive Note Keywords (Multi-word first, then single-word)
   static const List<String> noteKeywords = [
-    'جراج يمين', 'برحة يسار', 'برحه يسار', 'موقف مظلل',
-    'عطلانة', 'عطلانه', 'مركونة', 'مركونه', 'ماشية', 'ماشيه', 'متحركة', 'متحركه',
-    'مطربة', 'مطربه', 'مصدومة', 'مصدومه', 'مغبرة', 'مغبره', 'مهملة', 'مهمله',
-    'مخالفة', 'مخالفه', 'بدون لوحة', 'بدون لوحه', 'مسروقة', 'مسروقه'
+    // Multi-word phrases
+    'واقفة صف تاني', 'واقفة صف ثاني', 'صف تاني', 'صف ثاني',
+    'واقفة غلط', 'واقفه غلط', 'موقف غلط',
+    'جراج يمين', 'برحة يسار', 'برحه يسار', 'موقف مظلل', 'في البايكة', 'في البايكه', 'تحت المظلة', 'تحت المظله', 'على الرصيف',
+    'في الممنوع', 'ممنوع الوقوف', 'عكس السير', 'سادة الطريق', 'ساد الطريق',
+    'بدون لوحة', 'بدون لوحه', 'بدون لوحات', 'بدون استمارة', 'بدون استماره',
+    'لوحة طايحة', 'لوحه طايحه', 'لوحة مطموسة', 'لوحه مطموسه', 'عليها غبار',
+
+    // Single-word keywords
+    'مركونة', 'مركونه', 'واقفة', 'واقفه',
+    'ماشية', 'ماشيه', 'متحركة', 'متحركه', 'بتتحرك', 'متحرك',
+    'عطلانة', 'عطلانه', 'خربانة', 'خربانه', 'معطلة', 'معطله',
+    'مطربة', 'مطربه', 'متربة', 'متربه', 'مغبرة', 'مغبره', 'مغبر',
+    'مهملة', 'مهمله', 'تالفة', 'تالفه', 'سكراب', 'تشليح', 'خردة', 'خرده',
+    'مصدومة', 'مصدومه', 'مكسورة', 'مكسوره', 'محروقة', 'محروقه',
+    'مخالفة', 'مخالفه', 'مخالف', 'مسروقة', 'مسروقه'
+  ];
+
+  static const Set<String> fillerWords = {
+    'نوعها', 'نوع', 'ماركة', 'ماركه', 'موديل', 'سيارة', 'سياره', 'عربية', 'عربيه',
+    'لوحة', 'لوحه', 'نمرة', 'نمره', 'رقم'
+  };
+
+  static const List<String> noteTriggers = [
+    'ملحوظة', 'ملحوظه', 'ملاحظة', 'ملاحظه', 'نوت', 'اكتب', 'سجل'
   ];
 
   /// Lookaround word boundary for Arabic text
@@ -97,7 +165,7 @@ class ArabicVoiceNormalizer {
     // 1. Compound units + tens: "خمسة وعشرين" -> 25, "ثمانية وعشرين" -> 28
     for (final ten in numTensRaw) {
       for (final unit in numUnitsRaw) {
-        final pattern = '(?:و\\s*)?(?:${unit.key})\\s*و\\s*(?:${ten.key})(?![ء-ي])';
+        final pattern = '(?:و\\s*)?(?:' + unit.key + ')\\s*و\\s*(?:' + ten.key + ')(?![ء-ي])';
         rules.add(MapEntry(RegExp('(?<![ء-ي])$pattern'), '${ten.value + unit.value}'));
       }
     }
@@ -119,7 +187,7 @@ class ArabicVoiceNormalizer {
 
     // 5. Tens (20, 30 ... 90)
     for (final ten in numTensRaw) {
-      rules.add(MapEntry(RegExp(_w('(?:و\\s*)?${ten.key}')), '${ten.value}'));
+      rules.add(MapEntry(RegExp(_w('(?:و\\s*)?' + ten.key)), '${ten.value}'));
     }
 
     // 6. Units (0 - 9)
@@ -192,7 +260,7 @@ class ArabicVoiceNormalizer {
       return '${arabicDigits.indexOf(digit)}';
     });
 
-    // Normalize Arabic letters
+    // Normalize Arabic letter variants
     cleaned = cleaned
         .replaceAll(RegExp(r'[أإآ]'), 'ا')
         .replaceAll('ة', 'ه')
@@ -256,38 +324,194 @@ class ArabicVoiceNormalizer {
 
   static final RegExp _singleLetter = RegExp(r'^[ا-ي]$');
   static final RegExp _digitsOnly = RegExp(r'^\d+$');
+  static final RegExp _gluedLetters = RegExp(r'^[ا-ي]{2,4}$');
 
   static bool _isLetter(String t) => _singleLetter.hasMatch(t);
   static bool _isDigits(String t) => _digitsOnly.hasMatch(t);
-
-  /// Supports 2 to 4 digits (standard Egyptian & Saudi plates)
   static bool _isPlateDigits(String t) => _isDigits(t) && t.length >= 2 && t.length <= 4;
+  static bool _isGluedLetters(String t) =>
+      _gluedLetters.hasMatch(t) && !fillerWords.contains(t) && !carBrands.contains(t) && !noteKeywords.contains(t);
 
-  static final RegExp _noteTriggerRe = RegExp(r'^(?:ال)?(?:ملحوظ|ملاحظ)');
-  static bool _isNoteTrigger(String t) => t == 'نوت' || _noteTriggerRe.hasMatch(t);
-  static const String _noteMark = '\u0001';
+  /// Extract Brand from a list of words, returning detected brand and the remaining words
+  static _BrandResult _extractBrandFromWords(List<String> words) {
+    if (words.isEmpty) return _BrandResult('-', words);
+    final str = words.join(' ');
 
-  /// True when a new plate starts at token [k]
-  static bool _startsPlate(List<String> tokens, int k) {
-    var j = k;
-    var n = 0;
-    while (j < tokens.length && _isLetter(tokens[j])) {
-      n++;
-      j++;
+    for (final b in carBrands) {
+      final bNorm = b.replaceAll('ة', 'ه').replaceAll(RegExp(r'[أإآ]'), 'ا').replaceAll('ى', 'ي');
+      final padded = ' $str ';
+      if (padded.contains(' $bNorm ')) {
+        final bTokens = bNorm.split(' ');
+        final remaining = <String>[];
+        int i = 0;
+        while (i < words.length) {
+          if (i + bTokens.length <= words.length &&
+              words.sublist(i, i + bTokens.length).join(' ') == bNorm) {
+            i += bTokens.length;
+          } else {
+            remaining.add(words[i]);
+            i++;
+          }
+        }
+        return _BrandResult(b, remaining);
+      }
     }
-    if (n >= 2 && n <= 4 && j < tokens.length && _isPlateDigits(tokens[j])) return true;
-    if (n == 0 &&
-        k + 1 < tokens.length &&
-        tokens[k].length >= 2 &&
-        tokens[k].length <= 4 &&
-        RegExp(r'^[ا-ي]+$').hasMatch(tokens[k]) &&
-        _isPlateDigits(tokens[k + 1])) {
-      return true;
-    }
-    return false;
+    return _BrandResult('-', words);
   }
 
-  static const List<String> _controlWords = ['بدايه', 'انتهي', 'انتهت'];
+  /// Extract Note from a list of words, honoring explicit triggers, note keywords, and free text
+  static String _extractNoteFromWords(List<String> words, {String? stickyNote}) {
+    if (words.isEmpty) return stickyNote ?? '-';
+
+    // 1. Explicit triggers: "ملحوظة ...", "نوت ..."
+    for (int i = 0; i < words.length; i++) {
+      if (noteTriggers.contains(words[i])) {
+        final explicit = words.sublist(i + 1).where((w) => !fillerWords.contains(w)).join(' ').trim();
+        if (explicit.isNotEmpty) return explicit;
+      }
+    }
+
+    // 2. Note keywords (multi-word first)
+    final str = words.join(' ');
+    for (final kw in noteKeywords) {
+      final kwNorm = kw.replaceAll('ة', 'ه').replaceAll(RegExp(r'[أإآ]'), 'ا').replaceAll('ى', 'ي');
+      if ((' $str ').contains(' $kwNorm ')) {
+        return kw;
+      }
+    }
+
+    // 3. Meaningful non-filler words
+    final useful = words.where((w) => !fillerWords.contains(w)).toList();
+    if (useful.isNotEmpty) {
+      return useful.join(' ').trim();
+    }
+
+    return stickyNote ?? '-';
+  }
+
+  /// Splits tokens occurring between two plates so that leading notes belong to Plate 1
+  /// and trailing brand/filler belongs to Plate 2.
+  static _SplitWords _splitWordsBetweenPlates(List<String> betweenWords) {
+    if (betweenWords.isEmpty) {
+      return const _SplitWords([], []);
+    }
+
+    int brandStart = -1;
+    final str = betweenWords.join(' ');
+    for (final b in carBrands) {
+      final bNorm = b.replaceAll('ة', 'ه').replaceAll(RegExp(r'[أإآ]'), 'ا').replaceAll('ى', 'ي');
+      if ((' $str ').contains(' $bNorm ')) {
+        final bTokens = bNorm.split(' ');
+        for (int i = 0; i <= betweenWords.length - bTokens.length; i++) {
+          if (betweenWords.sublist(i, i + bTokens.length).join(' ') == bNorm) {
+            if (i > 0 && fillerWords.contains(betweenWords[i - 1])) {
+              brandStart = i - 1;
+            } else {
+              brandStart = i;
+            }
+            break;
+          }
+        }
+        break;
+      }
+    }
+
+    if (brandStart != -1) {
+      return _SplitWords(
+        betweenWords.sublist(0, brandStart),
+        betweenWords.sublist(brandStart),
+      );
+    }
+
+    return _SplitWords(
+      betweenWords,
+      const [],
+    );
+  }
+
+  /// Internal match representation
+  static List<_PlateMatch> _findPlateMatches(List<String> tokens) {
+    final matches = <_PlateMatch>[];
+    int i = 0;
+
+    while (i < tokens.length) {
+      // Pattern A: Letters then Digits ("د ب ن 2816")
+      final lA = <String>[];
+      int j = i;
+      while (j < tokens.length && _isLetter(tokens[j])) {
+        lA.add(tokens[j]);
+        j++;
+      }
+      if (lA.length >= 2 && lA.length <= 4 && j < tokens.length && _isPlateDigits(tokens[j])) {
+        matches.add(_PlateMatch(
+          startIndex: i,
+          endIndex: j + 1,
+          letters: lA.join(' '),
+          digits: tokens[j],
+          fullPlate: '${lA.join(' ')} ${tokens[j]}',
+          isDigitsFirst: false,
+        ));
+        i = j + 1;
+        continue;
+      }
+
+      // Pattern B: GluedLetters then Digits ("دبن 2816")
+      if (_isGluedLetters(tokens[i]) && i + 1 < tokens.length && _isPlateDigits(tokens[i + 1])) {
+        final letters = tokens[i].split('').join(' ');
+        matches.add(_PlateMatch(
+          startIndex: i,
+          endIndex: i + 2,
+          letters: letters,
+          digits: tokens[i + 1],
+          fullPlate: '$letters ${tokens[i + 1]}',
+          isDigitsFirst: false,
+        ));
+        i = i + 2;
+        continue;
+      }
+
+      // Pattern C: Digits then Letters ("2816 د ب ن")
+      if (_isPlateDigits(tokens[i])) {
+        final lC = <String>[];
+        int k = i + 1;
+        while (k < tokens.length && _isLetter(tokens[k])) {
+          lC.add(tokens[k]);
+          k++;
+        }
+        if (lC.length >= 2 && lC.length <= 4) {
+          matches.add(_PlateMatch(
+            startIndex: i,
+            endIndex: k,
+            letters: lC.join(' '),
+            digits: tokens[i],
+            fullPlate: '${lC.join(' ')} ${tokens[i]}',
+            isDigitsFirst: true,
+          ));
+          i = k;
+          continue;
+        }
+
+        // Pattern D: Digits then GluedLetters ("2816 دبن")
+        if (i + 1 < tokens.length && _isGluedLetters(tokens[i + 1])) {
+          final letters = tokens[i + 1].split('').join(' ');
+          matches.add(_PlateMatch(
+            startIndex: i,
+            endIndex: i + 2,
+            letters: letters,
+            digits: tokens[i],
+            fullPlate: '$letters ${tokens[i]}',
+            isDigitsFirst: true,
+          ));
+          i = i + 2;
+          continue;
+        }
+      }
+
+      i++;
+    }
+
+    return matches;
+  }
 
   /// Multi-plate scanner (token based)
   static List<ParsedPlateData> extractPlatesFromTranscript(
@@ -307,113 +531,46 @@ class ArabicVoiceNormalizer {
     if (normalized.isEmpty) return results;
 
     final tokens = normalized.split(' ').where((t) => t.isNotEmpty).toList();
-    int i = 0;
+    final matches = _findPlateMatches(tokens);
+    if (matches.isEmpty) return results;
 
-    while (i < tokens.length) {
-      final letters = <String>[];
-      int j = i;
+    // Build context window per plate: preceding words + succeeding words
+    final platePrev = List<List<String>>.generate(matches.length, (_) => []);
+    final plateNext = List<List<String>>.generate(matches.length, (_) => []);
 
-      // Case A: letters spoken one by one -> "د ب ن"
-      while (j < tokens.length && _isLetter(tokens[j])) {
-        letters.add(tokens[j]);
-        j++;
-      }
+    platePrev[0] = tokens.sublist(0, matches[0].startIndex);
+    plateNext[matches.length - 1] = tokens.sublist(matches.last.endIndex);
 
-      // Case B: recogniser glued the letters into one word -> "دبن 2816"
-      if (letters.isEmpty &&
-          j + 1 < tokens.length &&
-          tokens[j].length >= 2 &&
-          tokens[j].length <= 4 &&
-          RegExp(r'^[ا-ي]+$').hasMatch(tokens[j]) &&
-          _isPlateDigits(tokens[j + 1])) {
-        letters.addAll(tokens[j].split(''));
-        j++;
-      }
+    for (int i = 0; i < matches.length - 1; i++) {
+      final between = tokens.sublist(matches[i].endIndex, matches[i + 1].startIndex);
+      final split = _splitWordsBetweenPlates(between);
+      plateNext[i] = split.forPlate1;
+      platePrev[i + 1] = split.forPlate2;
+    }
 
-      if (letters.length >= 2 && letters.length <= 4 && j < tokens.length && _isPlateDigits(tokens[j])) {
-        final digits = tokens[j];
-        j++;
+    for (int pIdx = 0; pIdx < matches.length; pIdx++) {
+      final match = matches[pIdx];
+      final prevWords = platePrev[pIdx];
+      final nextWords = plateNext[pIdx];
+      final contextWords = [...prevWords, ...nextWords];
 
-        // Free words attached to this plate: brand / note
-        final freeWords = <String>[];
-        while (j < tokens.length && !_startsPlate(tokens, j)) {
-          final tok = tokens[j];
-          if (_controlWords.any((c) => tok.startsWith(c))) break;
-          freeWords.add(tok);
-          j++;
-        }
+      final brandRes = _extractBrandFromWords(contextWords);
+      final note = _extractNoteFromWords(brandRes.remaining, stickyNote: stickyNote);
 
-        String brand = '-';
-        String note = stickyNote ?? '-';
+      final isComplete = match.digits.length == 4 ||
+          pIdx + 1 < matches.length ||
+          nextWords.isNotEmpty ||
+          brandRes.brand != '-' ||
+          note != (stickyNote ?? '-');
 
-        if (freeWords.isNotEmpty) {
-          final noteIdx = freeWords.indexWhere(_isNoteTrigger);
-          if (noteIdx != -1) {
-            freeWords[noteIdx] = _noteMark;
-          }
-
-          final brandMatch = carBrands.firstWhere(
-            (b) => freeWords.any((w) => w == b || w.contains(b)),
-            orElse: () => '',
-          );
-          if (brandMatch.isNotEmpty) {
-            brand = brandMatch;
-            freeWords.removeWhere((w) => w == brandMatch);
-          }
-
-          final explicitWords = <String>[];
-          bool afterTrigger = false;
-          for (final w in freeWords) {
-            if (w == _noteMark) {
-              afterTrigger = true;
-              continue;
-            }
-            if (afterTrigger) {
-              explicitWords.add(w);
-            }
-          }
-
-          if (explicitWords.isNotEmpty) {
-            note = explicitWords.join(' ');
-          } else {
-            final kw = noteKeywords.firstWhere(
-              (k) => freeWords.any((w) => w == k || w.contains(k)),
-              orElse: () => '',
-            );
-            if (kw.isNotEmpty) {
-              note = kw;
-            } else if (freeWords.isNotEmpty && !freeWords.contains(_noteMark)) {
-              final candidate = freeWords.join(' ').trim();
-              if (candidate.isNotEmpty) note = candidate;
-            }
-          }
-        }
-
-        bool isComplete = true;
-        if (digits.length == 4) {
-          isComplete = true;
-        } else if (j < tokens.length && _startsPlate(tokens, j)) {
-          isComplete = true;
-        } else if (freeWords.isNotEmpty || brand != '-') {
-          isComplete = true;
-        } else if (j == tokens.length && digits.length < 4) {
-          isComplete = false;
-        }
-
-        results.add(ParsedPlateData(
-          fullPlate: '${letters.join(' ')} $digits',
-          letters: letters.join(' '),
-          digits: digits,
-          detectedBrand: brand,
-          detectedNote: note,
-          isComplete: isComplete,
-        ));
-
-        i = j;
-        continue;
-      }
-
-      i = j > i ? j : i + 1;
+      results.add(ParsedPlateData(
+        fullPlate: match.fullPlate,
+        letters: match.letters,
+        digits: match.digits,
+        detectedBrand: brandRes.brand,
+        detectedNote: note,
+        isComplete: isComplete,
+      ));
     }
 
     return results;
@@ -444,23 +601,25 @@ class ArabicVoiceNormalizer {
     return extractSlotsFromPlates(extractPlatesFromTranscript(transcript));
   }
 
+  /// Extract standalone car brand and/or note spoken after a pause without a plate
+  static OrphanVoiceData extractOrphanBrandAndNote(String normalized) {
+    if (normalized.isEmpty) return const OrphanVoiceData(brand: '-', note: '-');
+    final tokens = normalized.split(' ').where((t) => t.isNotEmpty).toList();
+    if (tokens.isEmpty) return const OrphanVoiceData(brand: '-', note: '-');
+
+    final brandRes = _extractBrandFromWords(tokens);
+    final note = _extractNoteFromWords(brandRes.remaining);
+
+    return OrphanVoiceData(
+      brand: brandRes.brand != '-' ? brandRes.brand : null,
+      note: note != '-' ? note : null,
+    );
+  }
+
   /// Orphan note spoken after a pause without a plate (from already normalized string)
   static String? orphanNoteFromNormalized(String normalized) {
-    if (normalized.isEmpty) return null;
-    final tokens = normalized.split(' ').where((t) => t.isNotEmpty).toList();
-    if (tokens.isEmpty) return null;
-
-    final kw = noteKeywords.firstWhere(
-      (k) => tokens.any((t) => t == k || t.contains(k)),
-      orElse: () => '',
-    );
-    if (kw.isNotEmpty) return kw;
-
-    final idx = tokens.indexWhere(_isNoteTrigger);
-    if (idx != -1 && idx + 1 < tokens.length) {
-      return tokens.sublist(idx + 1).join(' ').trim();
-    }
-    return null;
+    final orphan = extractOrphanBrandAndNote(normalized);
+    return orphan.note;
   }
 
   /// Orphan note spoken after a pause without a plate

@@ -82,7 +82,7 @@ class AiPlateRefiner {
       'A plate consists of 2 to 4 Arabic letters followed by 2 to 4 digits. '
       'Spoken numbers must be converted to numeric digits (e.g. "الفين تمانية مية واحد وستين" -> 2861, "تلاتة تسعة اتنين ستة" -> 3926, "زيرو" -> 0). '
       'Spoken letter names and colloquial variations must become letters (e.g. "سين" -> س, "به" -> ب, "يه" -> ي, "طه" -> ط, "عين" -> ع, "نون" -> ن, "دال" -> د). '
-      'Optional car brand or remarks spoken after the plate go to "brand" and "note". '
+      'Optional car brand or remarks spoken before, after, or anywhere around the plate go to "brand" and "note". '
       'Reply with ONLY a valid JSON array, strictly without any prose, markdown explanation or thinking: '
       '[{"letters":"د ب ن","digits":"2816","brand":"","note":""}]. '
       'If no valid plate is detected, reply with []. Never invent digits or letters.';

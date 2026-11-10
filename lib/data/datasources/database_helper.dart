@@ -126,6 +126,21 @@ class DatabaseHelper {
     );
   }
 
+  
+  Future<int> updateCarRecordBrandAndNotes(int id, {String? carType, String? notes}) async {
+    final values = <String, dynamic>{};
+    if (carType != null && carType.isNotEmpty && carType != '-') values['car_type'] = carType;
+    if (notes != null && notes.isNotEmpty) values['notes'] = notes;
+    if (values.isEmpty) return 0;
+    final db = await database;
+    return await db.update(
+      'car_records',
+      values,
+      where: 'id = ? AND user_id = ?',
+      whereArgs: [id, _currentUserId],
+    );
+  }
+
   Future<int> updateCarRecord(CarRecord record) async {
     if (record.id == null) return 0;
     final db = await database;

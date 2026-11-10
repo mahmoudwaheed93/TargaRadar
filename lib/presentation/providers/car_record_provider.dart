@@ -46,6 +46,7 @@ class CarRecordProvider extends ChangeNotifier {
   // AFTER the plate, so the saved row must be updated when it arrives)
   final Map<String, int> _recordIds = {};
   final Map<String, String> _latestNote = {};
+  final Map<String, CarRecord> _pendingUpdates = {};
   String? _lastKey; // last plate recorded (target of a note said after a pause)
   int _orphanSession = -1;
   String? _orphanTarget;
@@ -75,15 +76,46 @@ class CarRecordProvider extends ChangeNotifier {
   /// A note spoken alone ("ملحوظة ...") goes to the plate recorded just before.
   void _handleOrphanNote(String? note, int session) {
     if (note == null) return;
+    _handleOrphanData(OrphanVoiceData(note: note), session);
+  }
+
+  /// Live instant update for car brand and note spoken after a pause without a plate
+  void _handleOrphanData(OrphanVoiceData data, int session) {
+    if (!data.hasData || _records.isEmpty) return;
+
     if (session != _orphanSession) {
       _orphanSession = session;
       _orphanTarget = _lastKey;
     }
-    final key = _orphanTarget;
+    final key = _orphanTarget ?? _lastKey;
     if (key == null) return;
-    if (_latestNote[key] == note) return;
-    _latestNote[key] = note;
-    _applyNoteUpdate(key);
+
+    final idx = _records.indexWhere((r) => ArabicVoiceNormalizer.normalizePlateForMatch(r.plateNumber) == key);
+    if (idx == -1) return;
+
+    final existing = _records[idx];
+    bool changed = false;
+    String curBrand = existing.carType;
+    String curNote = existing.notes;
+
+    if (data.brand != null && data.brand != '-' && (curBrand == 'غير محدد' || curBrand == '-' || curBrand != data.brand)) {
+      curBrand = data.brand!;
+      changed = true;
+    }
+
+    if (data.note != null && data.note != '-' && curNote != data.note) {
+      curNote = data.note!;
+      _latestNote[key] = curNote;
+      changed = true;
+    }
+
+    if (changed) {
+      final updated = existing.copyWith(carType: curBrand, notes: curNote);
+      _records[idx] = updated;
+      _recentRecords = _records.take(10).toList();
+      notifyListeners();
+      _persistRecordUpdate(key, updated);
+    }
   }
 
   // Recorder (user) name: editable, persisted, and written to every exported row
@@ -233,6 +265,7 @@ class CarRecordProvider extends ChangeNotifier {
 
     await _speechService.startListening(
       onOrphanNote: _handleOrphanNote,
+      onOrphanData: _handleOrphanData,
       onResult: (rawTranscript, extractedPlates, slots, normalized) {
         _currentTranscript = rawTranscript;
         _currentSlots = slots;
@@ -289,10 +322,33 @@ class CarRecordProvider extends ChangeNotifier {
     final spokenNote = plateData.detectedNote != '-' ? plateData.detectedNote : null;
 
     if (_recordedPlates.contains(norm)) {
-      // Plate already saved: a note spoken after it goes to NOTES only.
-      if (spokenNote != null && spokenNote != _stickyNote && _latestNote[norm] != spokenNote) {
-        _latestNote[norm] = spokenNote;
-        _applyNoteUpdate(norm);
+      // Plate already registered: streaming speech continues with brand or note
+      final spokenBrand = plateData.detectedBrand != '-' ? plateData.detectedBrand : null;
+      final idx = _records.indexWhere((r) => ArabicVoiceNormalizer.normalizePlateForMatch(r.plateNumber) == norm);
+      if (idx != -1) {
+        final existing = _records[idx];
+        bool changed = false;
+        String curBrand = existing.carType;
+        String curNote = existing.notes;
+
+        if (spokenBrand != null && (curBrand == 'غير محدد' || curBrand == '-' || curBrand != spokenBrand)) {
+          curBrand = spokenBrand;
+          changed = true;
+        }
+
+        if (spokenNote != null && spokenNote != _stickyNote && curNote != spokenNote) {
+          curNote = spokenNote;
+          _latestNote[norm] = spokenNote;
+          changed = true;
+        }
+
+        if (changed) {
+          final updated = existing.copyWith(carType: curBrand, notes: curNote);
+          _records[idx] = updated;
+          _recentRecords = _records.take(10).toList();
+          notifyListeners();
+          _persistRecordUpdate(norm, updated);
+        }
       }
       return;
     }
@@ -401,9 +457,14 @@ class CarRecordProvider extends ChangeNotifier {
       try {
         final newId = await _dbHelper.insertCarRecord(record);
         _recordIds[norm] = newId;
-        final latest = _latestNote[norm];
-        if (latest != null && latest != '-' && latest != record.notes) {
-          await _dbHelper.updateCarRecordNotes(newId, latest);
+        final pending = _pendingUpdates.remove(norm);
+        if (pending != null) {
+          await _dbHelper.updateCarRecord(pending.copyWith(id: newId));
+        } else {
+          final latest = _latestNote[norm];
+          if (latest != null && latest != '-' && latest != record.notes) {
+            await _dbHelper.updateCarRecordNotes(newId, latest);
+          }
         }
       } catch (e) {
         debugPrint('Async DB insert error: $e');
@@ -597,6 +658,16 @@ class CarRecordProvider extends ChangeNotifier {
     } finally {
       _isExporting = false;
       notifyListeners();
+    }
+  }
+
+  
+  void _persistRecordUpdate(String norm, CarRecord updated) {
+    final id = _recordIds[norm] ?? updated.id;
+    if (id != null) {
+      unawaited(_dbHelper.updateCarRecord(updated.copyWith(id: id)));
+    } else {
+      _pendingUpdates[norm] = updated;
     }
   }
 
