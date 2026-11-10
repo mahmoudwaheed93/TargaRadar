@@ -30,6 +30,18 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Analyze code
+        run: |
+          flutter analyze > analyze.log 2>&1 || true
+          cat analyze.log
+
+      - name: Upload analyze log
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: analyze-log
+          path: analyze.log
+
       - name: Build APK (Release)
         run: |
           flutter build apk --release
