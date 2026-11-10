@@ -1,3 +1,4 @@
+import '../../data/models/excel_vehicle_model.dart';
 import '../../core/utils/date_formatter.dart';
 import 'dart:async';
 import 'package:excel/excel.dart';

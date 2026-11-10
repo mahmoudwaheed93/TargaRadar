@@ -1,3 +1,4 @@
+export '../../data/models/excel_vehicle_model.dart' show OrphanVoiceData, ParsedPlateData;
 import '../../data/models/excel_vehicle_model.dart';
 
 class _PlateMatch {

@@ -1,3 +1,5 @@
+import 'package:car_logix/presentation/providers/car_record_provider.dart';
+import 'package:car_logix/presentation/providers/inspection_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:car_logix/core/services/arabic_voice_normalizer.dart';
 import 'package:car_logix/data/models/excel_vehicle_model.dart';

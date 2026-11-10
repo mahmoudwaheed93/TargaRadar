@@ -35,7 +35,7 @@ jobs:
 
       - name: Build APK (Release)
         run: |
-          flutter build apk --release 2>&1 | tee build.log || (echo "### ❌ Build Log" >> $GITHUB_STEP_SUMMARY && echo '```' >> $GITHUB_STEP_SUMMARY && cat build.log >> $GITHUB_STEP_SUMMARY && echo '```' >> $GITHUB_STEP_SUMMARY && exit 1)
+          flutter build apk --release
           cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/AIMS-Mobile-v1.0.3.apk
 
       - name: Upload APK artifact
