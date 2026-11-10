@@ -126,6 +126,17 @@ class DatabaseHelper {
     );
   }
 
+  Future<int> updateCarRecord(CarRecord record) async {
+    if (record.id == null) return 0;
+    final db = await database;
+    return await db.update(
+      'car_records',
+      record.toMap(),
+      where: 'id = ? AND user_id = ?',
+      whereArgs: [record.id, _currentUserId],
+    );
+  }
+
   Future<void> clearAllRecords() async {
     final db = await database;
     await db.delete(
