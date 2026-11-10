@@ -171,7 +171,8 @@ class InspectionProvider extends ChangeNotifier {
   
   void _ingestInspectionPlate(ParsedPlateData p, void Function(InspectionEntry entry) onMatch) {
     final key = ArabicVoiceNormalizer.plateKey(p.fullPlate);
-    final note = p.detectedNote != '-' ? p.detectedNote : '';
+    // In Inspection mode, inspectors only speak plate numbers. Never record voice notes.
+    const note = '';
 
     if (_seen.contains(key)) {
       // The note is spoken after the plate -> goes to the note only.

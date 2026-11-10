@@ -100,5 +100,22 @@ void main() {
       expect(o3.brand, equals('سوناتا'));
       expect(o3.note, equals('واقفة صف تاني'));
     });
+
+    test('Plate with Trailing Letter Noise: د ب ن 2816 س', () {
+      final res = ArabicVoiceNormalizer.extractPlatesFromTranscript('د ب ن 2816 س');
+      expect(res.length, equals(1));
+      expect(res.first.fullPlate, equals('د ب ن 2816'));
+      expect(res.first.detectedBrand, equals('-'));
+      expect(res.first.detectedNote, equals('-'));
+    });
+
+    test('Speech of pure letters never creates orphan note', () {
+      final o = ArabicVoiceNormalizer.extractOrphanBrandAndNote(
+        ArabicVoiceNormalizer.normalizeArabicSpoken('د ب ن'),
+      );
+      expect(o.brand, isNull);
+      expect(o.note, isNull);
+    });
   });
 }
+

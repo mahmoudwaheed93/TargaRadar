@@ -360,14 +360,18 @@ class ArabicVoiceNormalizer {
     return _BrandResult('-', words);
   }
 
-  /// Extract Note from a list of words, honoring explicit triggers, note keywords, and free text
+  /// Extract Note from a list of words, strictly honoring explicit triggers and note keywords.
+  /// Stray letters or unrecognized words are NEVER captured as notes.
   static String _extractNoteFromWords(List<String> words, {String? stickyNote}) {
     if (words.isEmpty) return stickyNote ?? '-';
 
-    // 1. Explicit triggers: "ملحوظة ...", "نوت ..."
+    // 1. Explicit triggers: "ملحوظة ...", "ملاحظة ...", "نوت ..."
     for (int i = 0; i < words.length; i++) {
       if (noteTriggers.contains(words[i])) {
-        final explicit = words.sublist(i + 1).where((w) => !fillerWords.contains(w)).join(' ').trim();
+        final explicit = words.sublist(i + 1)
+            .where((w) => !fillerWords.contains(w) && !_isLetter(w))
+            .join(' ')
+            .trim();
         if (explicit.isNotEmpty) return explicit;
       }
     }
@@ -381,12 +385,7 @@ class ArabicVoiceNormalizer {
       }
     }
 
-    // 3. Meaningful non-filler words
-    final useful = words.where((w) => !fillerWords.contains(w)).toList();
-    if (useful.isNotEmpty) {
-      return useful.join(' ').trim();
-    }
-
+    // Strictly return stickyNote or '-': NEVER invent notes or record stray letters!
     return stickyNote ?? '-';
   }
 
@@ -607,6 +606,11 @@ class ArabicVoiceNormalizer {
     if (normalized.isEmpty) return const OrphanVoiceData(brand: '-', note: '-');
     final tokens = normalized.split(' ').where((t) => t.isNotEmpty).toList();
     if (tokens.isEmpty) return const OrphanVoiceData(brand: '-', note: '-');
+
+    // Never treat speech consisting purely of individual letters as orphan brand or note
+    if (tokens.every((t) => _isLetter(t))) {
+      return const OrphanVoiceData(brand: '-', note: '-');
+    }
 
     final brandRes = _extractBrandFromWords(tokens);
     final note = _extractNoteFromWords(brandRes.remaining);
