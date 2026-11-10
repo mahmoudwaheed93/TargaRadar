@@ -135,33 +135,7 @@ class _ExcelImportDialogState extends State<_ExcelImportDialog> {
               const SizedBox(height: 10),
               Text(_error!, style: const TextStyle(color: AppColors.error, fontSize: 12)),
             ],
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _busy
-                    ? null
-                    : () async {
-                        final messenger = ScaffoldMessenger.of(widget.parentContext);
-                        Navigator.pop(context);
-                        await widget.auditProvider.loadSampleData();
-                        messenger.showSnackBar(
-                          const SnackBar(
-                            content: Text('تم تفعيل الشيت التجريبي للمطابقة (5 سيارات)'),
-                            backgroundColor: AppColors.primary,
-                          ),
-                        );
-                      },
-                icon: const Icon(Icons.auto_awesome, color: AppColors.info, size: 18),
-                label: const Text('تحميل شيت تجريبي افتراضي', style: TextStyle(color: AppColors.info, fontSize: 12)),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: Size.zero,
-                  side: const BorderSide(color: AppColors.info),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                ),
-              ),
-            ),
+
           ],
         ),
       ),

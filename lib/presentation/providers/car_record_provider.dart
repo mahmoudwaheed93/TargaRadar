@@ -247,9 +247,22 @@ class CarRecordProvider extends ChangeNotifier {
           _stickyNote = null;
         }
 
-        // Process all extracted complete plates
-        for (final plateData in extractedPlates) {
+        // 1. Process all completed plates immediately (zero wait)
+        final completePlates = extractedPlates.where((p) => p.isComplete).toList();
+        for (final plateData in completePlates) {
           _ingestPlate(plateData, sortAuditProvider, onPlateAdded);
+        }
+
+        // 2. Debounce trailing incomplete plate (e.g. 2 or 3 digits at the end of speech)
+        // If the speaker pauses for 450ms without speaking a 4th digit, commit it cleanly!
+        _incompletePlateTimer?.cancel();
+        if (extractedPlates.isNotEmpty && !extractedPlates.last.isComplete) {
+          final pending = extractedPlates.last;
+          _incompletePlateTimer = Timer(const Duration(milliseconds: 450), () {
+            if (!_isListening) return;
+            _ingestPlate(pending, sortAuditProvider, onPlateAdded);
+            notifyListeners();
+          });
         }
 
         // AI fallback (background, never blocks the local engine): only when the
@@ -282,6 +295,54 @@ class CarRecordProvider extends ChangeNotifier {
         _applyNoteUpdate(norm);
       }
       return;
+    }
+
+    // In-place upgrade defense: if the previous card was inserted within 4 seconds
+    // and is a prefix of the new plate (e.g. "د ب ق 28" upgraded to "د ب ق 2852"):
+    if (_records.isNotEmpty) {
+      final prev = _records.first;
+      final prevNorm = ArabicVoiceNormalizer.normalizePlateForMatch(prev.plateNumber);
+      if (norm.length > prevNorm.length &&
+          norm.startsWith(prevNorm.substring(0, prevNorm.length.clamp(0, norm.length - 1))) &&
+          DateTime.now().difference(prev.registrationDate).inSeconds <= 4) {
+        _recordedPlates.remove(prevNorm);
+        _recordedPlates.add(norm);
+        _lastKey = norm;
+        _latestNote[norm] = spokenNote ?? prev.notes;
+
+        final auditLog = sortAuditProvider.processAuditPlate(
+          plateData.fullPlate,
+          detectedBrand: plateData.detectedBrand,
+          detectedNote: spokenNote ?? _stickyNote,
+        );
+        _lastReadPlate = plateData.fullPlate;
+        _lastReadIsWanted = auditLog.isMatched;
+        _lastMatchResult = auditLog;
+
+        final updated = CarRecord(
+          id: prev.id,
+          plateNumber: plateData.fullPlate,
+          carType: plateData.detectedBrand != '-' ? plateData.detectedBrand : (auditLog.carType.isNotEmpty && auditLog.carType != '-' ? auditLog.carType : prev.carType),
+          gpsUrl: prev.gpsUrl,
+          district: prev.district,
+          street: prev.street,
+          registrationDate: prev.registrationDate,
+          recorderName: prev.recorderName,
+          notes: spokenNote ?? prev.notes,
+          isMatched: auditLog.isMatched,
+          color: auditLog.color,
+          owner: auditLog.owner,
+        );
+        _records[0] = updated;
+        _recentRecords = _records.take(10).toList();
+        notifyListeners();
+
+        if (prev.id != null) {
+          unawaited(_dbHelper.updateCarRecord(updated));
+        }
+        onPlateAdded(plateData.fullPlate, auditLog.isMatched, auditLog.carType);
+        return;
+      }
     }
 
     _recordedPlates.add(norm);
@@ -352,6 +413,7 @@ class CarRecordProvider extends ChangeNotifier {
     onPlateAdded(plateData.fullPlate, auditLog.isMatched, auditLog.carType);
   }
 
+  Timer? _incompletePlateTimer;
   Timer? _aiTimer;
   static const Duration _aiDebounce = Duration(milliseconds: 750);
 
@@ -425,6 +487,7 @@ class CarRecordProvider extends ChangeNotifier {
   }
 
   Future<void> stopVoiceListening() async {
+    _incompletePlateTimer?.cancel();
     _aiTimer?.cancel();
     await _speechService.stopListening();
     _isListening = false;

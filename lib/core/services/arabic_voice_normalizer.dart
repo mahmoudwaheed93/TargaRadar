@@ -7,14 +7,19 @@ class ArabicVoiceNormalizer {
   ArabicVoiceNormalizer._();
 
   static const List<String> carBrands = [
-    'مرسيدس', 'تويوتا', 'نيسان', 'هيونداي', 'كيا', 'فورد', 'شيفروليه',
-    'النترا', 'كورولا', 'كامري', 'سوناتا', 'اكسنت', 'بي ام', 'لكزس', 'مازدا', 'هافال', 'جيلي'
+    'مرسيدس', 'تويوتا', 'نيسان', 'هيونداي', 'كيا', 'فورد', 'شيفروليه', 'شفروليه',
+    'النترا', 'كورولا', 'كامري', 'سوناتا', 'اكسنت', 'بي ام', 'بي ام دبليو', 'لكزس', 'مازدا', 
+    'هافال', 'جيلي', 'ام جي', 'شانجان', 'هوندا', 'ميتسوبيشي', 'سوزوكي', 'ايسوزو', 'شيري', 
+    'لاندكروزر', 'لاند كروزر', 'برادو', 'باترول', 'شاص', 'ددسن', 'هايلكس', 'افالون', 'ازيرا', 
+    'كريتا', 'توسان', 'سنتافي', 'سبورتاج', 'سيراتو', 'ريو', 'اوبتيما', 'كادينزا', 'تشارجر', 
+    'كابرس', 'تاهو', 'يوكن', 'سييرا', 'سلفرادو', 'رينجر', 'هايلاندر', 'راف فور', 'يارس'
   ];
 
   static const List<String> noteKeywords = [
     'جراج يمين', 'برحة يسار', 'برحه يسار', 'موقف مظلل',
-    'عطلانة', 'عطلانه', 'مركونة', 'مركونه',
-    'مطربة', 'مطربه', 'مصدومة', 'مصدومه'
+    'عطلانة', 'عطلانه', 'مركونة', 'مركونه', 'ماشية', 'ماشيه', 'متحركة', 'متحركه',
+    'مطربة', 'مطربه', 'مصدومة', 'مصدومه', 'مغبرة', 'مغبره', 'مهملة', 'مهمله',
+    'مخالفة', 'مخالفه', 'بدون لوحة', 'بدون لوحه', 'مسروقة', 'مسروقه'
   ];
 
   /// Lookaround word boundary for Arabic text
@@ -384,12 +389,24 @@ class ArabicVoiceNormalizer {
           }
         }
 
+        bool isComplete = true;
+        if (digits.length == 4) {
+          isComplete = true;
+        } else if (j < tokens.length && _startsPlate(tokens, j)) {
+          isComplete = true;
+        } else if (freeWords.isNotEmpty || brand != '-') {
+          isComplete = true;
+        } else if (j == tokens.length && digits.length < 4) {
+          isComplete = false;
+        }
+
         results.add(ParsedPlateData(
           fullPlate: '${letters.join(' ')} $digits',
           letters: letters.join(' '),
           digits: digits,
           detectedBrand: brand,
           detectedNote: note,
+          isComplete: isComplete,
         ));
 
         i = j;

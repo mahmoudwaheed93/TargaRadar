@@ -483,12 +483,7 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
           ],
         ),
         actions: [
-          // AI Engine Configuration (Groq LPU)
-          IconButton(
-            icon: const Icon(Icons.auto_awesome, color: Colors.amber, size: 22),
-            tooltip: 'إعدادات ذكاء Groq الاصطناعي',
-            onPressed: () => _showAiSettingsDialog(context),
-          ),
+
           // Export session Excel
           IconButton(
             icon: const Icon(Icons.download_rounded, color: AppColors.primary, size: 22),

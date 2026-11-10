@@ -155,6 +155,7 @@ class ParsedPlateData {
   final String digits;    // e.g. "1234"
   final String detectedBrand; // e.g. "تويوتا"
   final String detectedNote;  // e.g. "جراج يمين"
+  final bool isComplete;      // true if 4 digits or finished by delimiter/pause
 
   const ParsedPlateData({
     required this.fullPlate,
@@ -162,5 +163,6 @@ class ParsedPlateData {
     required this.digits,
     required this.detectedBrand,
     required this.detectedNote,
+    this.isComplete = true,
   });
 }

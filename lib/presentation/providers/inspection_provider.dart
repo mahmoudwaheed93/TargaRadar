@@ -59,6 +59,7 @@ class InspectionProvider extends ChangeNotifier {
   bool _isListening = false;
   int _timer = 0;
   Timer? _ticker;
+  Timer? _incompletePlateTimer;
   String? _lastKey;
   int _orphanSession = -1;
   String? _orphanTarget;
@@ -157,6 +158,63 @@ class InspectionProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  
+  void _ingestInspectionPlate(ParsedPlateData p, void Function(InspectionEntry entry) onMatch) {
+    final key = ArabicVoiceNormalizer.plateKey(p.fullPlate);
+    final note = p.detectedNote != '-' ? p.detectedNote : '';
+
+    if (_seen.contains(key)) {
+      // The note is spoken after the plate -> goes to the note only.
+      final i = _entries.indexWhere((e) => e.key == key);
+      if (i != -1 && note.isNotEmpty && _entries[i].note != note) {
+        _entries[i] = _entries[i].copyWith(note: note);
+      }
+      return;
+    }
+
+    // In-place upgrade defense: if the previous entry in _entries is a prefix of key:
+    if (_entries.isNotEmpty) {
+      final prev = _entries.first;
+      if (key.length > prev.key.length && key.startsWith(prev.key.substring(0, prev.key.length - 1))) {
+        _seen.remove(prev.key);
+        _seen.add(key);
+        _lastKey = key;
+        final row = _rowFor(key);
+        final updated = InspectionEntry(
+          id: prev.id,
+          plate: p.fullPlate,
+          key: key,
+          time: prev.time,
+          inSheet: row != null,
+          rowData: row ?? const {},
+          note: note.isNotEmpty ? note : prev.note,
+        );
+        _entries[0] = updated;
+        if (updated.inSheet) onMatch(updated);
+        notifyListeners();
+        return;
+      }
+    }
+
+    _seen.add(key);
+    _lastKey = key;
+
+    final row = _rowFor(key);
+    final now = DateTime.now();
+    final entry = InspectionEntry(
+      id: 'insp-${now.microsecondsSinceEpoch}',
+      plate: p.fullPlate,
+      key: key,
+      time: AppDateFormatter.time12(now),
+      inSheet: row != null,
+      rowData: row ?? const {},
+      note: note,
+    );
+    _entries.insert(0, entry);
+    if (entry.inSheet) onMatch(entry);
+    notifyListeners();
+  }
+
   Future<void> startListening({required void Function(InspectionEntry entry) onMatch}) async {
     if (_isListening) return;
     _orphanSession = -1;
@@ -173,35 +231,24 @@ class InspectionProvider extends ChangeNotifier {
       onOrphanNote: _handleOrphanNote,
       onResult: (raw, plates, slots, normalized) {
         _slots = slots;
-        for (final p in plates) {
-          final key = ArabicVoiceNormalizer.plateKey(p.fullPlate);
-          final note = p.detectedNote != '-' ? p.detectedNote : '';
 
-          if (_seen.contains(key)) {
-            // The note is spoken after the plate -> goes to the note only.
-            final i = _entries.indexWhere((e) => e.key == key);
-            if (i != -1 && note.isNotEmpty && _entries[i].note != note) {
-              _entries[i] = _entries[i].copyWith(note: note);
-            }
-            continue;
-          }
-          _seen.add(key);
-          _lastKey = key;
-
-          final row = _rowFor(key);
-          final now = DateTime.now();
-          final entry = InspectionEntry(
-            id: 'insp-${now.microsecondsSinceEpoch}',
-            plate: p.fullPlate,
-            key: key,
-            time: AppDateFormatter.time12(now),
-            inSheet: row != null,
-            rowData: row ?? const {},
-            note: note,
-          );
-          _entries.insert(0, entry);
-          if (entry.inSheet) onMatch(entry);
+        // 1. Process all completed plates immediately (zero wait)
+        final completePlates = plates.where((p) => p.isComplete).toList();
+        for (final p in completePlates) {
+          _ingestInspectionPlate(p, onMatch);
         }
+
+        // 2. Debounce trailing incomplete plate (e.g. 2 or 3 digits at the end of speech)
+        _incompletePlateTimer?.cancel();
+        if (plates.isNotEmpty && !plates.last.isComplete) {
+          final pending = plates.last;
+          _incompletePlateTimer = Timer(const Duration(milliseconds: 450), () {
+            if (!_isListening) return;
+            _ingestInspectionPlate(pending, onMatch);
+            notifyListeners();
+          });
+        }
+
         notifyListeners();
       },
       onDone: () {
@@ -246,6 +293,7 @@ class InspectionProvider extends ChangeNotifier {
   }
 
   Future<void> stopListening() async {
+    _incompletePlateTimer?.cancel();
     await _speech.stopListening();
     _isListening = false;
     _ticker?.cancel();
