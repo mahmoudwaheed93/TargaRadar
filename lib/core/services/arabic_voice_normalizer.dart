@@ -603,13 +603,13 @@ class ArabicVoiceNormalizer {
 
   /// Extract standalone car brand and/or note spoken after a pause without a plate
   static OrphanVoiceData extractOrphanBrandAndNote(String normalized) {
-    if (normalized.isEmpty) return const OrphanVoiceData(brand: '-', note: '-');
+    if (normalized.isEmpty) return const OrphanVoiceData();
     final tokens = normalized.split(' ').where((t) => t.isNotEmpty).toList();
-    if (tokens.isEmpty) return const OrphanVoiceData(brand: '-', note: '-');
+    if (tokens.isEmpty) return const OrphanVoiceData();
 
     // Never treat speech consisting purely of individual letters as orphan brand or note
     if (tokens.every((t) => _isLetter(t))) {
-      return const OrphanVoiceData(brand: '-', note: '-');
+      return const OrphanVoiceData();
     }
 
     final brandRes = _extractBrandFromWords(tokens);
