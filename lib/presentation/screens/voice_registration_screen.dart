@@ -1008,6 +1008,25 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
                     _buildBigSlot(recordProvider.currentSlots['l1'] ?? '-'),
                   ],
                 ),
+                if (recordProvider.isListening && recordProvider.currentTranscript.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10141D),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFF232F46)),
+                    ),
+                    child: Text(
+                      recordProvider.currentTranscript,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: AppColors.primary, fontSize: 11),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

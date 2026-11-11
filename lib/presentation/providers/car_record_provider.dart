@@ -540,7 +540,7 @@ class CarRecordProvider extends ChangeNotifier {
     });
   }
 
-  /// Process text input containing plate numbers
+  /// Process text input containing plate numbers (supports any order + brand/note)
   Future<int> processTextPlates({
     required List<String> plates,
     required ExcelSortAuditProvider sortAuditProvider,
@@ -550,14 +550,27 @@ class CarRecordProvider extends ChangeNotifier {
     for (final raw in plates) {
       final trimmed = raw.trim();
       if (trimmed.isEmpty) continue;
-      final norm = ArabicVoiceNormalizer.normalizePlateForMatch(trimmed);
+
+      final parsed = ArabicVoiceNormalizer.extractPlatesFromTranscript(trimmed, stickyNote: _stickyNote);
+      if (parsed.isNotEmpty) {
+        for (final p in parsed) {
+          final norm = ArabicVoiceNormalizer.plateKey(p.fullPlate);
+          final alreadySeen = _recordedPlates.contains(norm);
+          _ingestPlate(p, sortAuditProvider, (plate, isMatched, model) {
+            if (isMatched && !alreadySeen) matchedCount++;
+            onPlateAdded(plate, isMatched, model);
+          });
+        }
+        continue;
+      }
+
+      final norm = ArabicVoiceNormalizer.plateKey(trimmed);
       if (norm.isEmpty || _recordedPlates.contains(norm)) continue;
 
       _recordedPlates.add(norm);
       _lastKey = norm;
       _latestNote[norm] = _stickyNote ?? '-';
 
-      // Audit & Match against Excel Sheet
       final auditLog = sortAuditProvider.processAuditPlate(
         trimmed,
         detectedNote: _stickyNote,

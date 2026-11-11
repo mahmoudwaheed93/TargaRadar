@@ -335,22 +335,37 @@ class InspectionProvider extends ChangeNotifier {
     );
   }
 
-    /// Process text input containing plate numbers (e.g. from a text box)
+  /// Process text input containing plate numbers (supports any order or glued format)
   int processTextPlates(List<String> plates, {required void Function(InspectionEntry entry) onMatch}) {
     int matchedCount = 0;
     for (final raw in plates) {
       final trimmed = raw.trim();
       if (trimmed.isEmpty) continue;
+
+      final parsed = ArabicVoiceNormalizer.extractPlatesFromTranscript(trimmed);
+      if (parsed.isNotEmpty) {
+        for (final p in parsed) {
+          final k = ArabicVoiceNormalizer.plateKey(p.fullPlate);
+          final wasSeen = _seen.contains(k);
+          _ingestInspectionPlate(p, (entry) {
+            if (!wasSeen) matchedCount++;
+            onMatch(entry);
+          });
+        }
+        continue;
+      }
+
       final key = ArabicVoiceNormalizer.plateKey(trimmed);
       if (key.isEmpty || _seen.contains(key)) continue;
 
       _seen.add(key);
       _lastKey = key;
+      _lastIngestedAt = DateTime.now();
 
       final row = _rowFor(key);
       final now = DateTime.now();
       final entry = InspectionEntry(
-        id: 'insp-${DateTime.now().microsecondsSinceEpoch}-$key',
+        id: 'insp-${now.microsecondsSinceEpoch}-$key',
         plate: trimmed,
         key: key,
         time: AppDateFormatter.time12(now),
@@ -368,7 +383,6 @@ class InspectionProvider extends ChangeNotifier {
     notifyListeners();
     return matchedCount;
   }
-
   void _scheduleAiFallback(
     String rawTranscript,
     String unparsedTail,
