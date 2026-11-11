@@ -47,6 +47,8 @@ class CarRecordProvider extends ChangeNotifier {
   final Map<String, int> _recordIds = {};
   final Map<String, String> _latestNote = {};
   final Map<String, CarRecord> _pendingUpdates = {};
+  final Map<String, CarRecord> _recordByKey = {};
+  String _lastProcessedTranscript = '';
   String? _lastKey; // last plate recorded (target of a note said after a pause)
   int _orphanSession = -1;
   String? _orphanTarget;
@@ -135,6 +137,7 @@ class CarRecordProvider extends ChangeNotifier {
     _recordedPlates.clear();
     _recordIds.clear();
     _latestNote.clear();
+    _recordByKey.clear();
     _recorderLoaded = false;
     await _loadRecorderName();
     await loadRecords();
@@ -221,8 +224,9 @@ class CarRecordProvider extends ChangeNotifier {
       _records = await _dbHelper.getAllCarRecords();
       _recentRecords = await _dbHelper.getRecentCarRecords(limit: 10);
       for (final r in _records) {
-        final key = ArabicVoiceNormalizer.normalizePlateForMatch(r.plateNumber);
+        final key = ArabicVoiceNormalizer.plateKey(r.plateNumber);
         _recordedPlates.add(key);
+        _recordByKey[key] = r;
         if (r.id != null) {
           _recordIds[key] = r.id!;
           _latestNote.putIfAbsent(key, () => r.notes);
@@ -266,7 +270,9 @@ class CarRecordProvider extends ChangeNotifier {
     await _speechService.startListening(
       onOrphanNote: _handleOrphanNote,
       onOrphanData: _handleOrphanData,
-      onResult: (rawTranscript, extractedPlates, slots, normalized) {
+      onResult: (rawTranscript, extractedPlates, slots, normalized, isFinal) {
+        if (rawTranscript == _lastProcessedTranscript && !isFinal) return;
+        _lastProcessedTranscript = isFinal ? '' : rawTranscript;
         _currentTranscript = rawTranscript;
         if (slots.isNotEmpty) {
           _currentSlots = slots;
@@ -282,31 +288,35 @@ class CarRecordProvider extends ChangeNotifier {
           _stickyNote = null;
         }
 
-        // 1. Process all completed plates immediately (zero wait)
+        // 1. Process all completed plates immediately (0ms wait)
         final completePlates = extractedPlates.where((p) => p.isComplete).toList();
         for (final plateData in completePlates) {
           _ingestPlate(plateData, sortAuditProvider, onPlateAdded);
         }
 
-        // 2. Debounce trailing incomplete plate (e.g. 2-letter digits-first or <4 digits)
-        // Gives the speaker 650ms to finish the final letter/digit before committing.
+        // 2. Trailing incomplete plate (e.g. 2-letter digits-first or <4 digits):
+        // Flush immediately on finalResult, otherwise debounce 550ms for the final letter/digit.
         _incompletePlateTimer?.cancel();
         _pendingIncompletePlate = null;
         if (extractedPlates.isNotEmpty && !extractedPlates.last.isComplete) {
           final pending = extractedPlates.last;
-          _pendingIncompletePlate = () => _ingestPlate(pending, sortAuditProvider, onPlateAdded);
-          _incompletePlateTimer = Timer(const Duration(milliseconds: 650), () {
-            final flush = _pendingIncompletePlate;
-            _pendingIncompletePlate = null;
-            if (!_isListening || flush == null) return;
-            flush();
-            notifyListeners();
-          });
+          if (isFinal) {
+            _ingestPlate(pending, sortAuditProvider, onPlateAdded);
+          } else {
+            _pendingIncompletePlate = () => _ingestPlate(pending, sortAuditProvider, onPlateAdded);
+            _incompletePlateTimer = Timer(const Duration(milliseconds: 550), () {
+              final flush = _pendingIncompletePlate;
+              _pendingIncompletePlate = null;
+              if (!_isListening || flush == null) return;
+              flush();
+              notifyListeners();
+            });
+          }
         }
 
-        // AI fallback (background, never blocks the local engine): only when the
-        // local parser found nothing but the transcript has plate-like digits.
-        _scheduleAiFallback(rawTranscript, normalized, extractedPlates.isEmpty, sortAuditProvider, onPlateAdded);
+        // 3. AI fallback on any unparsed trailing digits (works even after earlier plates!)
+        final unparsedTail = ArabicVoiceNormalizer.extractUnparsedTail(normalized);
+        _scheduleAiFallback(rawTranscript, unparsedTail, sortAuditProvider, onPlateAdded);
 
         notifyListeners();
       },
@@ -329,9 +339,16 @@ class CarRecordProvider extends ChangeNotifier {
     final spokenNote = plateData.detectedNote != '-' ? plateData.detectedNote : null;
 
     if (_recordedPlates.contains(norm)) {
-      // Plate already registered: streaming speech continues with brand or note
+      // Fast O(1) pre-check before touching _records list on rapid partial speech ticks
       final spokenBrand = plateData.detectedBrand != '-' ? plateData.detectedBrand : null;
-      final idx = _records.indexWhere((r) => ArabicVoiceNormalizer.normalizePlateForMatch(r.plateNumber) == norm);
+      final cached = _recordByKey[norm];
+      if (cached != null) {
+        final brandSame = spokenBrand == null || cached.carType == spokenBrand;
+        final noteSame = spokenNote == null || spokenNote == _stickyNote || cached.notes == spokenNote;
+        if (brandSame && noteSame) return;
+      }
+
+      final idx = _records.indexWhere((r) => ArabicVoiceNormalizer.plateKey(r.plateNumber) == norm);
       if (idx != -1) {
         final existing = _records[idx];
         bool changed = false;
@@ -352,6 +369,7 @@ class CarRecordProvider extends ChangeNotifier {
         if (changed) {
           final updated = existing.copyWith(carType: curBrand, notes: curNote);
           _records[idx] = updated;
+          _recordByKey[norm] = updated;
           _recentRecords = _records.take(10).toList();
           notifyListeners();
           _persistRecordUpdate(norm, updated);
@@ -369,6 +387,7 @@ class CarRecordProvider extends ChangeNotifier {
       if (DateTime.now().difference(prev.registrationDate).inSeconds <= 5 &&
           ArabicVoiceNormalizer.isPlateUpgrade(prev.plateNumber, plateData.fullPlate)) {
         _recordedPlates.remove(prevNorm);
+        _recordByKey.remove(prevNorm);
         _recordedPlates.add(norm);
         _lastKey = norm;
         _latestNote[norm] = spokenNote ?? prev.notes;
@@ -398,6 +417,7 @@ class CarRecordProvider extends ChangeNotifier {
           owner: auditLog.owner,
         );
         _records[0] = updated;
+        _recordByKey[norm] = updated;
         _recentRecords = _records.take(10).toList();
         notifyListeners();
 
@@ -445,6 +465,7 @@ class CarRecordProvider extends ChangeNotifier {
     );
 
     _records.insert(0, record);
+    _recordByKey[norm] = record;
     _recentRecords = _records.take(10).toList();
     notifyListeners();
 
@@ -496,22 +517,21 @@ class CarRecordProvider extends ChangeNotifier {
     };
   }
   Timer? _aiTimer;
-  static const Duration _aiDebounce = Duration(milliseconds: 750);
+  static const Duration _aiDebounce = Duration(milliseconds: 450);
 
   void _scheduleAiFallback(
     String rawTranscript,
-    String normalized,
-    bool localFoundNothing,
+    String unparsedTail,
     ExcelSortAuditProvider sortAuditProvider,
     Function(String plate, bool isMatched, String carModel) onPlateAdded,
   ) {
     _aiTimer?.cancel();
-    if (!localFoundNothing || !AiPlateRefiner.instance.isEnabled) return;
-    final digitCount = RegExp(r'\d').allMatches(normalized).length;
-    if (digitCount < 3) return;
-    // Wait until the speaker pauses, so we send one request per utterance.
+    if (unparsedTail.isEmpty || !AiPlateRefiner.instance.isEnabled) return;
+    final digitCount = RegExp(r'\d').allMatches(unparsedTail).length;
+    if (digitCount < 2) return;
+    final input = unparsedTail.length < rawTranscript.length ? unparsedTail : rawTranscript;
     _aiTimer = Timer(_aiDebounce, () async {
-      final plates = await AiPlateRefiner.instance.refine(rawTranscript);
+      final plates = await AiPlateRefiner.instance.refine(input);
       if (!_isListening) return;
       for (final p in plates) {
         _ingestPlate(p, sortAuditProvider, onPlateAdded);
@@ -726,6 +746,7 @@ class CarRecordProvider extends ChangeNotifier {
     _recordedPlates.clear();
     _recordIds.clear();
     _latestNote.clear();
+    _recordByKey.clear();
     notifyListeners();
   }
 }

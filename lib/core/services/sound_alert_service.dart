@@ -8,10 +8,10 @@ class SoundAlertService {
   static final SoundAlertService instance = SoundAlertService._();
 
   AudioPlayer? _player;
+  bool _audioContextConfigured = false;
   DateTime? _lastAlertTime;
 
-  /// Plays the alarm sound for a few seconds (e.g. 3-4s).
-  /// Debounces rapid consecutive calls so audio does not overlap chaotically.
+  /// Plays the alarm sound for a few seconds without stealing microphone AudioFocus.
   Future<void> playMatchAlarm({int durationSeconds = 3}) async {
     try {
       final now = DateTime.now();
@@ -27,6 +27,12 @@ class SoundAlertService {
 
       unawaited(() async {
         try {
+          if (!_audioContextConfigured) {
+            _audioContextConfigured = true;
+            await player.setAudioContext(
+              AudioContextConfig(focus: AudioContextConfigFocus.mixWithOthers).build(),
+            );
+          }
           await player.stop();
           await player.setVolume(1.0);
           await player.play(AssetSource('sounds/alarm.wav'));
@@ -50,5 +56,6 @@ class SoundAlertService {
   void dispose() {
     _player?.dispose();
     _player = null;
+    _audioContextConfigured = false;
   }
 }

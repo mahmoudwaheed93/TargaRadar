@@ -15,7 +15,7 @@ class WebSpeechPlatformService implements SpeechPlatformService {
 
   @override
   Future<void> startListening({
-    required Function(String transcript) onResult,
+    required Function(List<String> candidates, bool isFinal) onResult,
     required VoidCallback onDone,
   }) async {
     _isListening = true;

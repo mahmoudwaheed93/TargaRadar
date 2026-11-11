@@ -78,12 +78,12 @@ class AiPlateRefiner {
   static const int _maxCache = 200;
 
   static const String _systemPrompt =
-      'You extract vehicle license plates from noisy Arabic speech-recognition text (Egyptian and Saudi dialects). '
-      'A plate consists of 2 to 4 Arabic letters followed by 2 to 4 digits. '
-      'Spoken numbers must be converted to numeric digits (e.g. "الفين تمانية مية واحد وستين" -> 2861, "تلاتة تسعة اتنين ستة" -> 3926, "زيرو" -> 0). '
-      'Spoken letter names and colloquial variations must become letters (e.g. "سين" -> س, "به" -> ب, "يه" -> ي, "طه" -> ط, "عين" -> ع, "نون" -> ن, "دال" -> د). '
-      'Optional car brand or remarks spoken before, after, or anywhere around the plate go to "brand" and "note". '
-      'Reply with ONLY a valid JSON array, strictly without any prose, markdown explanation or thinking: '
+      'You extract vehicle license plates from fast or noisy Arabic speech-recognition text (Egyptian and Saudi dialects). '
+      'Handle both Letters-First ("د ب ن 2816") and Digits-First ("2816 د ب ن") speech; always return 2-4 Arabic letters and 2-4 digits. '
+      'Spoken numbers must be converted to numeric digits (e.g. "الفين تمانية مية واحد وستين" -> 2861, "تلات تلاف متين تلاتة وخمسين" -> 3253, "زيرو" -> 0). '
+      'Spoken letter names and colloquial variations become single Arabic letters (e.g. "سين" -> س, "به" -> ب, "يه" -> ي, "قاف" -> ق, "نون" -> ن, "دال" -> د). '
+      'Only set "note" if explicit remark trigger (ملحوظة/ملاحظة/نوت/اكتب/سجل) or car condition (مركونة/واقفة غلط/عطلانة/مصدومة/مخالفة/ماشية) is spoken; otherwise note MUST be "". '
+      'Reply with ONLY a valid JSON array, strictly without any prose, markdown or thinking: '
       '[{"letters":"د ب ن","digits":"2816","brand":"","note":""}]. '
       'If no valid plate is detected, reply with []. Never invent digits or letters.';
 
@@ -128,7 +128,8 @@ class AiPlateRefiner {
       }
       final body = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
       final content = body['choices'][0]['message']['content'] as String? ?? '';
-      final plates = _parse(content);
+      final allowNote = ArabicVoiceNormalizer.hasValidNoteTriggerOrKeyword(rawTranscript);
+      final plates = _parse(content, allowNote: allowNote);
 
       if (_cache.length >= _maxCache) _cache.remove(_cache.keys.first);
       _cache[key] = plates;
@@ -148,7 +149,7 @@ class AiPlateRefiner {
 
   /// Strictly validates the model output: anything that is not
   /// 2-4 Arabic letters + exactly 4 digits is dropped.
-  List<ParsedPlateData> _parse(String content) {
+  List<ParsedPlateData> _parse(String content, {bool allowNote = true}) {
     final start = content.indexOf('[');
     final end = content.lastIndexOf(']');
     if (start == -1 || end <= start) return const [];
@@ -169,7 +170,70 @@ class AiPlateRefiner {
 
       final letters = lettersRaw.split('').join(' ');
       final brand = '${item['brand'] ?? ''}'.trim();
-      final note = '${item['note'] ?? ''}'.trim();
+      final rawNote = allowNote ? '${item['note'] ?? ''}'.trim() : '';
+      final note = (rawNote.isEmpty || RegExp(r'^[ا-ي](\s+[ا-ي])*
+    }
+    return out;
+  }
+
+  /// Utility to test API connectivity and return latency
+  Future<({bool success, String message, int latencyMs})> testConnection({String? customToken}) async {
+    await _ensureInit();
+    final candidate = (customToken != null && customToken.trim().isNotEmpty)
+        ? customToken.trim()
+        : effectiveGroqToken;
+    final t = candidate.isNotEmpty ? candidate : kHuggingFaceToken;
+    final ep = candidate.isNotEmpty ? _groqEndpoint : _hfEndpoint;
+    final md = candidate.isNotEmpty ? _groqModel : _hfModel;
+
+    if (t.isEmpty) {
+      return (success: false, message: 'لم يتم إدخال مفتاح API', latencyMs: 0);
+    }
+
+    final sw = Stopwatch()..start();
+    try {
+      final res = await _client.post(
+        Uri.parse(ep),
+        headers: {
+          'Authorization': 'Bearer $t',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'model': md,
+          'temperature': 0,
+          'max_tokens': 60,
+          'messages': [
+            {'role': 'system', 'content': _systemPrompt},
+            {'role': 'user', 'content': 'د ب ن 2816'},
+          ],
+        }),
+      ).timeout(const Duration(milliseconds: 4000));
+
+      sw.stop();
+      if (res.statusCode == 200) {
+        return (
+          success: true,
+          message: 'الاتصال ناجح ومحرك Groq LPU جاهز للعمل!',
+          latencyMs: sw.elapsedMilliseconds,
+        );
+      } else {
+        return (
+          success: false,
+          message: 'خطأ من الخادم (رمز ${res.statusCode}): تأكد من صحة المفتاح',
+          latencyMs: sw.elapsedMilliseconds,
+        );
+      }
+    } catch (e) {
+      sw.stop();
+      return (
+        success: false,
+        message: 'تعذر الاتصال بالخادم: $e',
+        latencyMs: sw.elapsedMilliseconds,
+      );
+    }
+  }
+}
+).hasMatch(rawNote)) ? '' : rawNote;
       out.add(ParsedPlateData(
         fullPlate: '$letters $digitsRaw',
         letters: letters,

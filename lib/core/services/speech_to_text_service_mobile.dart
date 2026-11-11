@@ -13,7 +13,7 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
   bool _wantListening = false;
   bool _isStarting = false;
   bool _useOnDevice = kPreferOnDeviceSpeech;
-  Function(String transcript)? _onResult;
+  Function(List<String> candidates, bool isFinal)? _onResult;
   VoidCallback? _onDone;
   String? _localeId;
   Timer? _restartTimer;
@@ -34,7 +34,6 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
         onError: (val) {
           debugPrint('Speech error: ${val.errorMsg} permanent=${val.permanent}');
           if (_wantListening) {
-            // Graceful fallback from on-device to cloud on ANY recognition failure
             if (_useOnDevice) {
               debugPrint('On-device speech error, falling back to Google Cloud recognition.');
               _useOnDevice = false;
@@ -75,13 +74,16 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
     }
   }
 
-  void _restartSoon() {
+  void _restartSoon({int delayMs = 25}) {
     if (!_wantListening || _isStarting) return;
     _restartTimer?.cancel();
-    // 100ms allows native Android AudioRecord to release hardware before next session
-    _restartTimer = Timer(const Duration(milliseconds: 100), () {
-      if (_wantListening && !_speech.isListening && !_isStarting) {
+    _restartTimer = Timer(Duration(milliseconds: delayMs), () {
+      if (!_wantListening || _isStarting) return;
+      if (!_speech.isListening) {
         _listen();
+      } else {
+        // Native AudioRecord still winding down — retry once shortly so the mic never dies silently
+        _restartSoon(delayMs: 60);
       }
     });
   }
@@ -106,8 +108,20 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
         listenFor: const Duration(hours: 1),
         pauseFor: const Duration(seconds: 10),
         onResult: (result) {
+          final candidates = <String>[];
+          final seen = <String>{};
           if (result.recognizedWords.isNotEmpty) {
-            _onResult?.call(result.recognizedWords);
+            candidates.add(result.recognizedWords);
+            seen.add(result.recognizedWords);
+          }
+          for (final alt in result.alternates) {
+            final w = alt.recognizedWords;
+            if (w.isNotEmpty && seen.add(w)) {
+              candidates.add(w);
+            }
+          }
+          if (candidates.isNotEmpty) {
+            _onResult?.call(candidates, result.finalResult);
           }
         },
       );
@@ -131,7 +145,7 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
 
   @override
   Future<void> startListening({
-    required Function(String transcript) onResult,
+    required Function(List<String> candidates, bool isFinal) onResult,
     required VoidCallback onDone,
   }) async {
     final available = await initSpeech();

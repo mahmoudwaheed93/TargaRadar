@@ -36,7 +36,7 @@ jobs:
       - name: Build APK (Release)
         run: |
           flutter build apk --release
-          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/AIMS-Mobile-v1.0.6.apk
+          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/AIMS-Mobile-v1.0.7.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -48,18 +48,19 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
         with:
-          tag_name: v1.0.6
-          name: "AIMS-Mobile v1.0.6 (Fix Missing Last Letter in Voice Capture)"
+          tag_name: v1.0.7
+          name: "AIMS-Mobile v1.0.7 (Ultra-Fast N-Best Voice Engine & Zero Dropped Letters)"
           draft: false
           prerelease: false
           make_latest: true
           body: |
-            ## 🚗 AIMS-Mobile / TargaRadar APK Release v1.0.6
-            - Fixed premature commit on digits-first speech so the 3rd/last letter is never cut off.
-            - Fixed in-place plate upgrade when trailing letters arrive after initial capture.
-            - Unified glued + single Arabic letter matching (e.g. "3253 بن ق" / "3253 ب نق").
-            - Restored Location (Google Maps link) and all reference sheet columns in Inspection Excel.
-            - Strict note filter & pre-configured Groq LPU AI fallback engine.
+            ## 🚗 AIMS-Mobile / TargaRadar APK Release v1.0.7
+            - Ultra-fast N-Best Google STT alternate recovery for fast & noisy speech (<0.2ms on-device).
+            - Zero-lag mic restart (25ms) + AudioFocus-safe match alarm so rapid dictation never stops.
+            - 0ms instant commit on STT finalResult + 550ms smart debounce on digits-first speech.
+            - Fixed cross-plate letter stealing on mixed-order fast consecutive plates.
+            - Expanded Egyptian compound numbers ("تلات تلاف"، "متين"، "الف متين...") and strict note validation.
+            - Continuous Groq LPU AI fallback on unparsed trailing speech in both Record and Inspection screens.
           files: |
             build/app/outputs/flutter-apk/app-release.apk
-            build/app/outputs/flutter-apk/AIMS-Mobile-v1.0.6.apk
+            build/app/outputs/flutter-apk/AIMS-Mobile-v1.0.7.apk

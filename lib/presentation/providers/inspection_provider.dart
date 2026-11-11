@@ -4,6 +4,7 @@ import '../../core/utils/date_formatter.dart';
 import 'dart:async';
 import 'package:excel/excel.dart';
 import 'package:flutter/foundation.dart';
+import '../../core/services/ai_plate_refiner.dart';
 import '../../core/services/arabic_voice_normalizer.dart';
 import '../../core/services/excel_table_service.dart';
 import '../../core/services/speech_service.dart';
@@ -86,8 +87,11 @@ class InspectionProvider extends ChangeNotifier {
     }
   }
   Timer? _incompletePlateTimer;
+  Timer? _aiTimer;
+  static const Duration _aiDebounce = Duration(milliseconds: 450);
   VoidCallback? _pendingIncompletePlate;
   DateTime? _lastIngestedAt;
+  String _lastProcessedTranscript = '';
 
   void _flushPendingIncompletePlate() {
     _incompletePlateTimer?.cancel();
@@ -284,31 +288,41 @@ class InspectionProvider extends ChangeNotifier {
     await _speech.startListening(
       onOrphanNote: _handleOrphanNote,
       onOrphanData: _handleOrphanData,
-      onResult: (raw, plates, slots, normalized) {
+      onResult: (raw, plates, slots, normalized, isFinal) {
+        if (raw == _lastProcessedTranscript && !isFinal) return;
+        _lastProcessedTranscript = isFinal ? '' : raw;
         if (slots.isNotEmpty) {
           _slots = slots;
         }
 
-        // 1. Process all completed plates immediately (zero wait)
+        // 1. Process all completed plates immediately (0ms wait)
         final completePlates = plates.where((p) => p.isComplete).toList();
         for (final p in completePlates) {
           _ingestInspectionPlate(p, onMatch);
         }
 
-        // 2. Debounce trailing incomplete plate (e.g. 2-letter digits-first or <4 digits)
+        // 2. Debounce trailing incomplete plate: flush immediately on isFinal, else 550ms
         _incompletePlateTimer?.cancel();
         _pendingIncompletePlate = null;
         if (plates.isNotEmpty && !plates.last.isComplete) {
           final pending = plates.last;
-          _pendingIncompletePlate = () => _ingestInspectionPlate(pending, onMatch);
-          _incompletePlateTimer = Timer(const Duration(milliseconds: 650), () {
-            final flush = _pendingIncompletePlate;
-            _pendingIncompletePlate = null;
-            if (!_isListening || flush == null) return;
-            flush();
-            notifyListeners();
-          });
+          if (isFinal) {
+            _ingestInspectionPlate(pending, onMatch);
+          } else {
+            _pendingIncompletePlate = () => _ingestInspectionPlate(pending, onMatch);
+            _incompletePlateTimer = Timer(const Duration(milliseconds: 550), () {
+              final flush = _pendingIncompletePlate;
+              _pendingIncompletePlate = null;
+              if (!_isListening || flush == null) return;
+              flush();
+              notifyListeners();
+            });
+          }
         }
+
+        // 3. Fast AI fallback for unparsed noisy speech tail
+        final unparsedTail = ArabicVoiceNormalizer.extractUnparsedTail(normalized);
+        _scheduleAiFallback(raw, unparsedTail, onMatch);
 
         notifyListeners();
       },
@@ -355,8 +369,29 @@ class InspectionProvider extends ChangeNotifier {
     return matchedCount;
   }
 
+  void _scheduleAiFallback(
+    String rawTranscript,
+    String unparsedTail,
+    void Function(InspectionEntry entry) onMatch,
+  ) {
+    _aiTimer?.cancel();
+    if (unparsedTail.isEmpty || !AiPlateRefiner.instance.isEnabled) return;
+    final digitCount = RegExp(r'\d').allMatches(unparsedTail).length;
+    if (digitCount < 2) return;
+    final input = unparsedTail.length < rawTranscript.length ? unparsedTail : rawTranscript;
+    _aiTimer = Timer(_aiDebounce, () async {
+      final plates = await AiPlateRefiner.instance.refine(input);
+      if (!_isListening) return;
+      for (final p in plates) {
+        _ingestInspectionPlate(p, onMatch);
+      }
+      if (plates.isNotEmpty) notifyListeners();
+    });
+  }
+
   Future<void> stopListening() async {
     _flushPendingIncompletePlate();
+    _aiTimer?.cancel();
     await _speech.stopListening();
     _isListening = false;
     _ticker?.cancel();

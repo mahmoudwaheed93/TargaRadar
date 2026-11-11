@@ -130,26 +130,26 @@ class ArabicVoiceNormalizer {
   // --- ARABIC NUMBER DEFINITIONS ---
 
   static final List<MapEntry<RegExp, int>> numThousands = [
-    MapEntry(RegExp(_w('(?:و\\s*)?(?:تسع[هة]?\\s*الاف|تسعة\\s*الاف)')), 9000),
-    MapEntry(RegExp(_w('(?:و\\s*)?(?:تماني[هة]?\\s*الاف|تمان\\s*الاف|ثماني[هة]?\\s*الاف|ثمان\\s*الاف)')), 8000),
-    MapEntry(RegExp(_w('(?:و\\s*)?(?:سبع[هة]?\\s*الاف|سبعة\\s*الاف)')), 7000),
-    MapEntry(RegExp(_w('(?:و\\s*)?(?:ست[هة]?\\s*الاف|ستة\\s*الاف)')), 6000),
-    MapEntry(RegExp(_w('(?:و\\s*)?(?:خمس[هة]?\\s*الاف|خمسة\\s*الاف)')), 5000),
-    MapEntry(RegExp(_w('(?:و\\s*)?(?:اربع[هة]?\\s*الاف|اربعة\\s*الاف)')), 4000),
-    MapEntry(RegExp(_w('(?:و\\s*)?(?:تلت[هة]?\\s*الاف|تلات[هة]?\\s*الاف|ثلاث[هة]?\\s*الاف)')), 3000),
+    MapEntry(RegExp(_w('(?:و\\s*)?(?:تسع[هة]?\\s*(?:الاف|تلاف)|تسعالاف)')), 9000),
+    MapEntry(RegExp(_w('(?:و\\s*)?(?:تماني?[هة]?\\s*(?:الاف|تلاف)|ثماني?[هة]?\\s*(?:الاف|تلاف)|تمانالاف|ثمانالاف)')), 8000),
+    MapEntry(RegExp(_w('(?:و\\s*)?(?:سبع[هة]?\\s*(?:الاف|تلاف)|سبعالاف)')), 7000),
+    MapEntry(RegExp(_w('(?:و\\s*)?(?:ست[هة]?\\s*(?:الاف|تلاف)|ستالاف)')), 6000),
+    MapEntry(RegExp(_w('(?:و\\s*)?(?:خمس[هة]?\\s*(?:الاف|تلاف)|خمسالاف)')), 5000),
+    MapEntry(RegExp(_w('(?:و\\s*)?(?:اربع[هة]?\\s*(?:الاف|تلاف)|اربعالاف)')), 4000),
+    MapEntry(RegExp(_w('(?:و\\s*)?(?:تلت[هة]?\\s*(?:الاف|تلاف)|تلات[هة]?\\s*(?:الاف|تلاف)|ثلاث[هة]?\\s*(?:الاف|تلاف)|تلاتالاف|تلتالاف)')), 3000),
     MapEntry(RegExp(_w('(?:و\\s*)?(?:الفين|الفان)')), 2000),
     MapEntry(RegExp(_w('(?:و\\s*)?الف')), 1000),
   ];
 
   static final List<MapEntry<RegExp, int>> numHundreds = [
-    MapEntry(RegExp(_w('(?:و\\s*)?(?:تسعم[يئ][هة]|تسعمائ[هة])')), 900),
-    MapEntry(RegExp(_w('(?:و\\s*)?(?:تمنم[يئ][هة]|تمانم[يئ][هة]|ثمانم[يئ][هة]|ثمانمائ[هة])')), 800),
-    MapEntry(RegExp(_w('(?:و\\s*)?(?:سبعم[يئ][هة]|سبعمائ[هة])')), 700),
-    MapEntry(RegExp(_w('(?:و\\s*)?(?:ستم[يئ][هة]|ستمائ[هة])')), 600),
-    MapEntry(RegExp(_w('(?:و\\s*)?(?:خمسم[يئ][هة]|خمسمائ[هة])')), 500),
-    MapEntry(RegExp(_w('(?:و\\s*)?(?:اربعم[يئ][هة]|اربعمائ[هة])')), 400),
-    MapEntry(RegExp(_w('(?:و\\s*)?(?:تلتم[يئ][هة]|تلاتم[يئ][هة]|ثلاثم[يئ][هة]|ثلاثمائ[هة])')), 300),
-    MapEntry(RegExp(_w('(?:و\\s*)?(?:ميتين|مائتان|مئتان)')), 200),
+    MapEntry(RegExp(_w('(?:و\\s*)?(?:تسع\\s*م[يئ][هة]|تسع\\s*مائ[هة])')), 900),
+    MapEntry(RegExp(_w('(?:و\\s*)?(?:تمن\\s*م[يئ][هة]|تمان\\s*م[يئ][هة]|ثمان\\s*م[يئ][هة]|ثمان\\s*مائ[هة])')), 800),
+    MapEntry(RegExp(_w('(?:و\\s*)?(?:سبع\\s*م[يئ][هة]|سبع\\s*مائ[هة])')), 700),
+    MapEntry(RegExp(_w('(?:و\\s*)?(?:ست\\s*م[يئ][هة]|ست\\s*مائ[هة])')), 600),
+    MapEntry(RegExp(_w('(?:و\\s*)?(?:خمس\\s*م[يئ][هة]|خمس\\s*مائ[هة])')), 500),
+    MapEntry(RegExp(_w('(?:و\\s*)?(?:اربع\\s*م[يئ][هة]|ربعم[يئ][هة]|اربع\\s*مائ[هة])')), 400),
+    MapEntry(RegExp(_w('(?:و\\s*)?(?:تلت\\s*م[يئ][هة]|تلات\\s*م[يئ][هة]|ثلاث\\s*م[يئ][هة]|ثلاث\\s*مائ[هة])')), 300),
+    MapEntry(RegExp(_w('(?:و\\s*)?(?:ميتين|متين|مائتين|مئتين|مائتان|مئتان)')), 200),
     MapEntry(RegExp(_w('(?:و\\s*)?(?:م[يئ][هة]|مائ[هة]|مائه)')), 100),
   ];
 
@@ -302,6 +302,12 @@ class ArabicVoiceNormalizer {
         .replaceAll('ة', 'ه')
         .replaceAll('ى', 'ي');
 
+    // Convert "الف" = 1000 BEFORE letter substitution when followed by number words
+    cleaned = cleaned.replaceAllMapped(
+      RegExp(r'(?<![ء-ي])الف(?=\s+(?:و\s*)?(?:م[يئ][هة]|متين|ميتين|مئتين|مائ|تلات|تلت|ثلاث|اربع|خمس|ست|سبع|تمان|تمن|ثمان|تسع|عشر|احد|حداشر|اتناشر|تلتاشر|اربعتاشر|خمستاشر|ستاشر|سبعتاشر|تمانتاشر|تسعتاشر|واحد|اتنين|اثنين))(?![ء-ي])'),
+      (m) => ' 1000 ',
+    );
+
     // Replace Spoken Letter Names
     for (final entry in arLetterNames) {
       cleaned = cleaned.replaceAll(entry.key, ' ${entry.value} ');
@@ -355,8 +361,15 @@ class ArabicVoiceNormalizer {
         .trim();
   }
 
-  /// Canon format key for fast O(1) index matching
-  static String plateKey(String plate) => normalizePlateForMatch(plate);
+  /// Canon format key for fast O(1) index matching (always letters + digits, strips punctuation)
+  static String plateKey(String plate) {
+    final norm = normalizePlateForMatch(plate)
+        .replaceAll(RegExp(r'[\u064B-\u065F\u0670\u0640]'), '');
+    if (norm.isEmpty) return '';
+    final letters = norm.replaceAll(RegExp(r'[^ا-ي]'), '');
+    final digits = norm.replaceAll(RegExp(r'[^\d]'), '');
+    return '$letters$digits';
+  }
 
   static final RegExp _singleLetter = RegExp(r'^[ا-ي]$');
   static final RegExp _digitsOnly = RegExp(r'^\d+$');
@@ -565,6 +578,51 @@ class ArabicVoiceNormalizer {
 
       // Pattern C/D: Digits then Letters (separated, glued, or mixed like "3253 بن ق")
       if (_isPlateDigits(tokens[i])) {
+        // Check if letters bridge directly to another plate's digits (e.g. "3253 ب ن ق د ب ن 2816")
+        final bridgeChars = <String>[];
+        final bridgeTokenStops = <int>[];
+        int bIdx = i + 1;
+        while (bIdx < tokens.length && _phraseLengthAt(tokens, bIdx) == 0) {
+          final t = tokens[bIdx];
+          if (_isLetter(t)) {
+            bridgeChars.add(t);
+            bridgeTokenStops.add(bIdx + 1);
+            bIdx++;
+          } else if (_isGluedLetters(t)) {
+            for (final ch in t.split('')) {
+              bridgeChars.add(ch);
+              bridgeTokenStops.add(bIdx + 1);
+            }
+            bIdx++;
+          } else {
+            break;
+          }
+        }
+
+        if (bridgeChars.length >= 5 && bIdx < tokens.length && _isPlateDigits(tokens[bIdx])) {
+          // Split cleanly at 3 letters leaving >=2 letters for the next plate
+          final take = (bridgeChars.length - 3 >= 2) ? 3 : 2;
+          final cutIdx = bridgeTokenStops[take - 1];
+          int actualTake = take;
+          while (actualTake < bridgeChars.length && bridgeTokenStops[actualTake] == cutIdx) {
+            actualTake++;
+          }
+          if (actualTake <= 4 && bridgeChars.length - actualTake >= 2) {
+            final letters = bridgeChars.sublist(0, actualTake).join(' ');
+            final digits = tokens[i];
+            matches.add(_PlateMatch(
+              startIndex: i,
+              endIndex: cutIdx,
+              letters: letters,
+              digits: digits,
+              fullPlate: '$letters $digits',
+              isDigitsFirst: true,
+            ));
+            i = cutIdx;
+            continue;
+          }
+        }
+
         final colC = _collectLetters(tokens, i + 1);
         if (colC.letters.length >= 2 && colC.letters.length <= 4) {
           final letters = colC.letters.join(' ');
@@ -710,5 +768,93 @@ class ArabicVoiceNormalizer {
   /// Orphan note spoken after a pause without a plate
   static String? orphanNote(String transcript) {
     return orphanNoteFromNormalized(normalizeArabicSpoken(transcript));
+  }
+
+  /// Returns tokens in [normalized] that follow the last matched plate, or all of
+  /// [normalized] when no plate was matched yet. Enables AI fallback on later
+  /// plates inside a continuous dictation buffer.
+  static String extractUnparsedTail(String normalized) {
+    if (normalized.isEmpty) return '';
+    final tokens = normalized.split(' ').where((t) => t.isNotEmpty).toList();
+    if (tokens.isEmpty) return '';
+    final matches = _findPlateMatches(tokens);
+    if (matches.isEmpty) return normalized;
+    final tail = tokens.sublist(matches.last.endIndex);
+    return tail.join(' ').trim();
+  }
+
+  /// Validates whether [rawTranscript] genuinely contains an explicit note
+  /// trigger or verified note keyword (guards AI output against stray-letter notes).
+  static bool hasValidNoteTriggerOrKeyword(String rawTranscript) {
+    final norm = normalizeArabicSpoken(rawTranscript);
+    if (norm.isEmpty) return false;
+    final words = norm.split(' ').where((w) => w.isNotEmpty).toList();
+    return _extractNoteFromWords(words) != '-';
+  }
+
+  static int _scorePlates(List<ParsedPlateData> plates, String unparsedTail) {
+    if (plates.isEmpty) return 0;
+    int score = 0;
+    for (final p in plates) {
+      final lCount = p.letters.replaceAll(' ', '').length;
+      final dCount = p.digits.length;
+      if (p.isComplete) score += 100;
+      score += (lCount >= 3 ? 25 : lCount * 7);
+      score += (dCount == 4 ? 25 : dCount * 5);
+      if (p.detectedBrand != '-') score += 5;
+      if (p.detectedNote != '-') score += 5;
+    }
+    if (!RegExp(r'\d{2,}').hasMatch(unparsedTail)) {
+      score += 10;
+    }
+    return score;
+  }
+
+  /// Selects the strongest transcription across Google STT N-best alternates in <0.2ms.
+  static ({
+    String rawTranscript,
+    String normalized,
+    List<ParsedPlateData> plates,
+  }) selectBestCandidate(List<String> candidates) {
+    if (candidates.isEmpty) {
+      return (rawTranscript: '', normalized: '', plates: const []);
+    }
+
+    final primaryRaw = candidates.first;
+    final primaryNorm = normalizeArabicSpoken(primaryRaw);
+    final primaryPlates = extractPlatesFromNormalized(primaryNorm);
+
+    if (candidates.length == 1) {
+      return (rawTranscript: primaryRaw, normalized: primaryNorm, plates: primaryPlates);
+    }
+
+    final primaryTail = extractUnparsedTail(primaryNorm);
+    if (primaryPlates.isNotEmpty &&
+        primaryPlates.last.isComplete &&
+        primaryPlates.last.letters.replaceAll(' ', '').length >= 3 &&
+        primaryPlates.last.digits.length == 4 &&
+        !RegExp(r'\d{2,}').hasMatch(primaryTail)) {
+      return (rawTranscript: primaryRaw, normalized: primaryNorm, plates: primaryPlates);
+    }
+
+    var bestRaw = primaryRaw;
+    var bestNorm = primaryNorm;
+    var bestPlates = primaryPlates;
+    var bestScore = _scorePlates(primaryPlates, primaryTail);
+
+    for (final altRaw in candidates.skip(1).take(4)) {
+      final altNorm = normalizeArabicSpoken(altRaw);
+      final altPlates = extractPlatesFromNormalized(altNorm);
+      final altTail = extractUnparsedTail(altNorm);
+      final altScore = _scorePlates(altPlates, altTail);
+      if (altScore > bestScore) {
+        bestScore = altScore;
+        bestRaw = altRaw;
+        bestNorm = altNorm;
+        bestPlates = altPlates;
+      }
+    }
+
+    return (rawTranscript: bestRaw, normalized: bestNorm, plates: bestPlates);
   }
 }

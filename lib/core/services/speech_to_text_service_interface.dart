@@ -8,7 +8,7 @@ abstract class SpeechPlatformService {
   int get session;
   Future<bool> initSpeech();
   Future<void> startListening({
-    required Function(String transcript) onResult,
+    required Function(List<String> candidates, bool isFinal) onResult,
     required VoidCallback onDone,
   });
   Future<void> stopListening();

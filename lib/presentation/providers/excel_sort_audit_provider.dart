@@ -218,7 +218,7 @@ class ExcelSortAuditProvider extends ChangeNotifier {
         parsed.add(ExcelVehicleItem(
           id: 'item-$stamp-$r',
           rawPlate: rawPlate,
-          normalizedPlate: ArabicVoiceNormalizer.normalizePlateForMatch(rawPlate),
+          normalizedPlate: ArabicVoiceNormalizer.plateKey(rawPlate),
           carType: cell(row, typeCol),
           color: cell(row, colorCol),
           owner: cell(row, ownerCol),
@@ -266,7 +266,7 @@ class ExcelSortAuditProvider extends ChangeNotifier {
 
   /// Match a spoken or manually entered plate against the sheet
   AuditedLogItem processAuditPlate(String fullPlate, {String? detectedBrand, String? detectedNote}) {
-    final normPlate = ArabicVoiceNormalizer.normalizePlateForMatch(fullPlate);
+    final normPlate = ArabicVoiceNormalizer.plateKey(fullPlate);
 
     final matchIndex = _index[normPlate] ?? -1;
 

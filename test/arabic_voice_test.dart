@@ -174,6 +174,63 @@ void main() {
       expect(ArabicVoiceNormalizer.isPlateUpgrade('ب ن 3253', 'ب ن ق 9999'), isFalse);
       expect(ArabicVoiceNormalizer.isPlateUpgrade('ب ن 3253', 'د س ص 3253'), isFalse);
     });
+
+    test('Egyptian compound thousands & hundreds (الف، متين، تلات تلاف) parse cleanly', () {
+      final r1 = ArabicVoiceNormalizer.extractPlatesFromTranscript('الف متين تلاته وخمسين ب ن ق');
+      expect(r1.length, equals(1));
+      expect(r1.first.fullPlate, equals('ب ن ق 1253'));
+
+      final r2 = ArabicVoiceNormalizer.extractPlatesFromTranscript('تلات تلاف متين تلاته وخمسين ب ن ق');
+      expect(r2.length, equals(1));
+      expect(r2.first.fullPlate, equals('ب ن ق 3253'));
+
+      final r3 = ArabicVoiceNormalizer.extractPlatesFromTranscript('اربع تلاف وخمسميه د ب ن');
+      expect(r3.length, equals(1));
+      expect(r3.first.fullPlate, equals('د ب ن 4500'));
+    });
+
+    test('Mixed-order consecutive fast speech does not steal first letter of next plate', () {
+      final r1 = ArabicVoiceNormalizer.extractPlatesFromTranscript('3253 ب ن ق د ب ن 2816');
+      expect(r1.length, equals(2));
+      expect(r1[0].fullPlate, equals('ب ن ق 3253'));
+      expect(r1[1].fullPlate, equals('د ب ن 2816'));
+
+      final r2 = ArabicVoiceNormalizer.extractPlatesFromTranscript('3253 ب ن ق د ب 2816');
+      expect(r2.length, equals(2));
+      expect(r2[0].fullPlate, equals('ب ن ق 3253'));
+      expect(r2[1].fullPlate, equals('د ب 2816'));
+    });
+
+    test('N-best selectBestCandidate recovers missing last letter from alternate hypothesis', () {
+      final best = ArabicVoiceNormalizer.selectBestCandidate(['3253 ب ن', '3253 ب ن ق']);
+      expect(best.plates.length, equals(1));
+      expect(best.plates.first.fullPlate, equals('ب ن ق 3253'));
+      expect(best.plates.first.isComplete, isTrue);
+
+      final bestNoise = ArabicVoiceNormalizer.selectBestCandidate(['كلام غير واضح', 'د ب ن 2816']);
+      expect(bestNoise.plates.length, equals(1));
+      expect(bestNoise.plates.first.fullPlate, equals('د ب ن 2816'));
+    });
+
+    test('Canonical plateKey matches Excel formats regardless of order or punctuation', () {
+      expect(
+        ArabicVoiceNormalizer.plateKey('2816 د ب ن'),
+        equals(ArabicVoiceNormalizer.plateKey('د ب ن - 2816')),
+      );
+      expect(
+        ArabicVoiceNormalizer.plateKey('د.ب.ن/2816'),
+        equals('دبن2816'),
+      );
+    });
+
+    test('extractUnparsedTail and hasValidNoteTriggerOrKeyword guard continuous AI fallback', () {
+      final normStr = ArabicVoiceNormalizer.normalizeArabicSpoken('د ب ن 2816 تلاته اتنين 53');
+      final tail = ArabicVoiceNormalizer.extractUnparsedTail(normStr);
+      expect(tail, equals('3253'));
+
+      expect(ArabicVoiceNormalizer.hasValidNoteTriggerOrKeyword('د ب ن 2816 س'), isFalse);
+      expect(ArabicVoiceNormalizer.hasValidNoteTriggerOrKeyword('د ب ن 2816 مركونة'), isTrue);
+    });
   });
 }
 
