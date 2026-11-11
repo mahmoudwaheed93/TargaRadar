@@ -231,6 +231,13 @@ void main() {
       expect(ArabicVoiceNormalizer.hasValidNoteTriggerOrKeyword('د ب ن 2816 س'), isFalse);
       expect(ArabicVoiceNormalizer.hasValidNoteTriggerOrKeyword('د ب ن 2816 مركونة'), isTrue);
     });
+
+    test('Back-to-back plates with adjacent digits do not merge across plate boundaries', () {
+      final res = ArabicVoiceNormalizer.extractPlatesFromTranscript('د ب ن 2816 تلاته اتنين خمسه تلاته ب ن ق');
+      expect(res.length, equals(2));
+      expect(res[0].fullPlate, equals('د ب ن 2816'));
+      expect(res[1].fullPlate, equals('ب ن ق 3253'));
+    });
   });
 }
 

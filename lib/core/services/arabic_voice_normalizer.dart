@@ -318,34 +318,43 @@ class ArabicVoiceNormalizer {
       cleaned = cleaned.replaceAll(entry.key, ' ${entry.value} ');
     }
 
-    // Collapse compound numbers: thousands + hundreds + remainder (e.g. 2000 800 16 -> 2816)
-    cleaned = cleaned.replaceAllMapped(RegExp(r'\b(\d{4})\s+(\d{3})\s+(\d{1,2})\b'), (m) {
+    // Collapse compound place-value numbers ONLY (e.g. 2000 800 16 -> 2816),
+    // never adding onto a finished 4-digit plate like 2816.
+    cleaned = cleaned.replaceAllMapped(RegExp(r'\b([1-9]000)\s+([1-9]00)\s+(\d{1,2})\b'), (m) {
       final sum = (int.tryParse(m.group(1)!) ?? 0) +
           (int.tryParse(m.group(2)!) ?? 0) +
           (int.tryParse(m.group(3)!) ?? 0);
       return '$sum';
     });
-    cleaned = cleaned.replaceAllMapped(RegExp(r'\b(\d{4})\s+(\d{3})\b'), (m) {
+    cleaned = cleaned.replaceAllMapped(RegExp(r'\b([1-9]000)\s+([1-9]00)\b'), (m) {
       final sum = (int.tryParse(m.group(1)!) ?? 0) + (int.tryParse(m.group(2)!) ?? 0);
       return '$sum';
     });
-    cleaned = cleaned.replaceAllMapped(RegExp(r'\b(\d{4})\s+(\d{1,2})\b'), (m) {
+    cleaned = cleaned.replaceAllMapped(RegExp(r'\b([1-9]000)\s+(\d{1,2})\b'), (m) {
       final sum = (int.tryParse(m.group(1)!) ?? 0) + (int.tryParse(m.group(2)!) ?? 0);
       return '$sum';
     });
-    cleaned = cleaned.replaceAllMapped(RegExp(r'\b(\d{3})\s+(\d{1,2})\b'), (m) {
+    cleaned = cleaned.replaceAllMapped(RegExp(r'\b([1-9]00)\s+(\d{1,2})\b'), (m) {
       final sum = (int.tryParse(m.group(1)!) ?? 0) + (int.tryParse(m.group(2)!) ?? 0);
       return '$sum';
     });
 
-    // Collapse continuous adjacent digits (e.g. "2 8 1 6" -> "2816")
-    var prev = '';
-    while (prev != cleaned) {
-      prev = cleaned;
-      cleaned = cleaned.replaceAllMapped(RegExp(r'(\d+)\s+(\d+)'), (m) => '${m.group(1)}${m.group(2)}');
+    // Collapse adjacent digit tokens up to 4 digits per plate in one O(N) pass
+    // (e.g. "2816 3 2 5 3" -> "2816 3253", never merging across two consecutive plates).
+    final rawTokens = cleaned.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+    final mergedTokens = <String>[];
+    for (final tok in rawTokens) {
+      if (mergedTokens.isNotEmpty &&
+          _digitsOnly.hasMatch(mergedTokens.last) &&
+          _digitsOnly.hasMatch(tok) &&
+          mergedTokens.last.length + tok.length <= 4) {
+        mergedTokens[mergedTokens.length - 1] = '${mergedTokens.last}$tok';
+      } else {
+        mergedTokens.add(tok);
+      }
     }
 
-    return cleaned.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return mergedTokens.join(' ');
   }
 
   /// Normalizer for plate string matching (removes all whitespace, standardizes alefs/yahs/digits)
