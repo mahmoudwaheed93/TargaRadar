@@ -87,6 +87,39 @@ class ArabicVoiceNormalizer {
     'لوحة', 'لوحه', 'نمرة', 'نمره', 'رقم'
   };
 
+  /// Common 2-4 char Arabic words that must NEVER be treated as glued plate letters.
+  static const Set<String> stopWords = {
+    'في', 'من', 'عن', 'على', 'علي', 'الى', 'الي', 'مع', 'بين', 'تحت', 'فوق', 'جنب', 'عند', 'ورا', 'امام',
+    'ده', 'دي', 'دا', 'دو', 'دول', 'هذا', 'هذه', 'تلك', 'ذلك', 'هو', 'هي', 'هم', 'هن', 'انا', 'انت', 'احنا',
+    'بس', 'كل', 'مش', 'ما', 'لا', 'لم', 'لن', 'او', 'ولا', 'ثم', 'حتى', 'حتي', 'لما', 'لو', 'ان', 'كان',
+    'يمين', 'يسار', 'شمال', 'صف', 'تاني', 'ثاني', 'غلط', 'صح', 'جراج', 'برحه', 'برحة', 'موقف', 'باب', 'لون',
+    'احمر', 'ازرق', 'اسود', 'ابيض', 'فضي', 'رمادي', 'رصاصي', 'اخضر', 'اصفر', 'بني', 'ذهبي', 'كحلي', 'بيج', 'نبيتي',
+    'جديد', 'قديم', 'صفر', 'مكرر', 'كنسل', 'الغي', 'الغاء', 'حذف', 'مسح', 'وقف', 'ايقاف', 'ابدا', 'بدايه', 'بداية', 'انتهي', 'انتهت',
+    'تمام', 'حاضر', 'ماشي', 'اوكي', 'شكرا', 'يلا', 'بص', 'شوف',
+    'جيب', 'اوبل', 'اودي', 'لادا', 'دايو', 'ملاكي', 'اجره', 'نقل', 'شيري', 'تيجو', 'بيك',
+  };
+
+  static String _normWord(String w) => w
+      .replaceAll('ة', 'ه')
+      .replaceAll(RegExp(r'[أإآ]'), 'ا')
+      .replaceAll('ى', 'ي');
+
+  static final Set<String> _nonLetterTokens = {
+    ...fillerWords,
+    ...stopWords,
+    ...noteTriggers,
+    ...carBrands.where((b) => !b.contains(' ')),
+    ...noteKeywords.where((n) => !n.contains(' ')),
+  }.map(_normWord).toSet();
+
+  static final List<List<String>> _multiWordPhrases = [
+    ...carBrands,
+    ...noteKeywords,
+  ]
+      .where((p) => p.contains(' '))
+      .map((p) => _normWord(p).split(' ').where((w) => w.isNotEmpty).toList())
+      .toList();
+
   static const List<String> noteTriggers = [
     'ملحوظة', 'ملحوظه', 'ملاحظة', 'ملاحظه', 'نوت', 'اكتب', 'سجل'
   ];
@@ -211,9 +244,9 @@ class ArabicVoiceNormalizer {
   /// Spoken letter names including colloquial Arabic/Egyptian speech recognition variants
   static final List<MapEntry<RegExp, String>> arLetterNames = [
     MapEntry(RegExp(_w('الف')), 'ا'),
-    MapEntry(RegExp(_w('باء|به')), 'ب'),
-    MapEntry(RegExp(_w('تاء|ته')), 'ت'),
-    MapEntry(RegExp(_w('ثاء|ثه')), 'ث'),
+    MapEntry(RegExp(_w('باء|به|با')), 'ب'),
+    MapEntry(RegExp(_w('تاء|ته|تا|تي')), 'ت'),
+    MapEntry(RegExp(_w('ثاء|ثه|ثا')), 'ث'),
     MapEntry(RegExp(_w('جيم')), 'ج'),
     MapEntry(RegExp(_w('حاء|حا|حه')), 'ح'),
     MapEntry(RegExp(_w('خاء|خا|خه')), 'خ'),
@@ -222,7 +255,7 @@ class ArabicVoiceNormalizer {
     MapEntry(RegExp(_w('راء|را|ره')), 'ر'),
     MapEntry(RegExp(_w('زاي|زا|زه')), 'ز'),
     MapEntry(RegExp(_w('سين|سا')), 'س'),
-    MapEntry(RegExp(_w('شين|شا')), 'ش'),
+    MapEntry(RegExp(_w('شين|شا|شي')), 'ش'),
     MapEntry(RegExp(_w('صاد|صا')), 'ص'),
     MapEntry(RegExp(_w('ضاد|ضا')), 'ض'),
     MapEntry(RegExp(_w('طاء|طا|طه')), 'ط'),
@@ -254,9 +287,11 @@ class ArabicVoiceNormalizer {
   }
 
   static String _normalizeUncached(String text) {
-    // Convert Hindi/Eastern digits to Western Arabic digits
+    // Strip Arabic diacritics & tatweel, convert Hindi/Eastern digits to Western Arabic digits
     const arabicDigits = '٠١٢٣٤٥٦٧٨٩';
-    var cleaned = text.replaceAllMapped(RegExp(r'[٠-٩]'), (match) {
+    var cleaned = text
+        .replaceAll(RegExp(r'[\u064B-\u065F\u0670\u0640]'), '')
+        .replaceAllMapped(RegExp(r'[٠-٩]'), (match) {
       final digit = match.group(0)!;
       return '${arabicDigits.indexOf(digit)}';
     });
@@ -331,7 +366,73 @@ class ArabicVoiceNormalizer {
   static bool _isDigits(String t) => _digitsOnly.hasMatch(t);
   static bool _isPlateDigits(String t) => _isDigits(t) && t.length >= 2 && t.length <= 4;
   static bool _isGluedLetters(String t) =>
-      _gluedLetters.hasMatch(t) && !fillerWords.contains(t) && !carBrands.contains(t) && !noteKeywords.contains(t);
+      _gluedLetters.hasMatch(t) && !_nonLetterTokens.contains(t);
+
+  static int _phraseLengthAt(List<String> tokens, int idx) {
+    for (final pTokens in _multiWordPhrases) {
+      if (idx + pTokens.length <= tokens.length) {
+        bool ok = true;
+        for (int k = 0; k < pTokens.length; k++) {
+          if (tokens[idx + k] != pTokens[k]) {
+            ok = false;
+            break;
+          }
+        }
+        if (ok) return pTokens.length;
+      }
+    }
+    return 0;
+  }
+
+  /// Collects up to 4 Arabic plate letters starting at [start], handling both
+  /// separated letters ("ب ن ق") and mixed glued tokens ("بن ق" / "ب نق").
+  static ({List<String> letters, int nextIdx}) _collectLetters(List<String> tokens, int start) {
+    final chars = <String>[];
+    int idx = start;
+    while (idx < tokens.length) {
+      if (_phraseLengthAt(tokens, idx) > 0) break;
+      final t = tokens[idx];
+      if (_isLetter(t)) {
+        if (chars.length + 1 > 4) break;
+        chars.add(t);
+        idx++;
+      } else if (_isGluedLetters(t)) {
+        if (chars.length + t.length > 4) break;
+        chars.addAll(t.split(''));
+        idx++;
+      } else {
+        break;
+      }
+    }
+    return (letters: chars, nextIdx: idx);
+  }
+
+  /// Returns true when [newPlate] is an incremental continuation of [prevPlate]
+  /// (either trailing digits added or trailing letters added after digits).
+  static bool isPlateUpgrade(String prevPlate, String newPlate) {
+    final prevNorm = normalizePlateForMatch(prevPlate);
+    final newNorm = normalizePlateForMatch(newPlate);
+    if (prevNorm.isEmpty || newNorm.length <= prevNorm.length) return false;
+    if (newNorm.startsWith(prevNorm)) return true;
+
+    final prevLetters = prevNorm.replaceAll(RegExp(r'\d'), '');
+    final newLetters = newNorm.replaceAll(RegExp(r'\d'), '');
+    final prevDigits = prevNorm.replaceAll(RegExp(r'[^\d]'), '');
+    final newDigits = newNorm.replaceAll(RegExp(r'[^\d]'), '');
+
+    if (prevLetters.isEmpty || prevDigits.isEmpty) return false;
+    if (prevDigits == newDigits &&
+        newLetters.length > prevLetters.length &&
+        newLetters.startsWith(prevLetters)) {
+      return true;
+    }
+    if (prevLetters == newLetters &&
+        newDigits.length > prevDigits.length &&
+        newDigits.startsWith(prevDigits)) {
+      return true;
+    }
+    return false;
+  }
 
   /// Extract Brand from a list of words, returning detected brand and the remaining words
   static _BrandResult _extractBrandFromWords(List<String> words) {
@@ -435,74 +536,48 @@ class ArabicVoiceNormalizer {
     int i = 0;
 
     while (i < tokens.length) {
-      // Pattern A: Letters then Digits ("د ب ن 2816")
-      final lA = <String>[];
-      int j = i;
-      while (j < tokens.length && _isLetter(tokens[j])) {
-        lA.add(tokens[j]);
-        j++;
-      }
-      if (lA.length >= 2 && lA.length <= 4 && j < tokens.length && _isPlateDigits(tokens[j])) {
-        matches.add(_PlateMatch(
-          startIndex: i,
-          endIndex: j + 1,
-          letters: lA.join(' '),
-          digits: tokens[j],
-          fullPlate: '${lA.join(' ')} ${tokens[j]}',
-          isDigitsFirst: false,
-        ));
-        i = j + 1;
+      // Skip multi-word car brands / note phrases so they are never swallowed as letters
+      final phraseLen = _phraseLengthAt(tokens, i);
+      if (phraseLen > 0) {
+        i += phraseLen;
         continue;
       }
 
-      // Pattern B: GluedLetters then Digits ("دبن 2816")
-      if (_isGluedLetters(tokens[i]) && i + 1 < tokens.length && _isPlateDigits(tokens[i + 1])) {
-        final letters = tokens[i].split('').join(' ');
+      // Pattern A/B: Letters (separated, glued, or mixed like "بن ق") then Digits
+      final colA = _collectLetters(tokens, i);
+      if (colA.letters.length >= 2 &&
+          colA.letters.length <= 4 &&
+          colA.nextIdx < tokens.length &&
+          _isPlateDigits(tokens[colA.nextIdx])) {
+        final letters = colA.letters.join(' ');
+        final digits = tokens[colA.nextIdx];
         matches.add(_PlateMatch(
           startIndex: i,
-          endIndex: i + 2,
+          endIndex: colA.nextIdx + 1,
           letters: letters,
-          digits: tokens[i + 1],
-          fullPlate: '$letters ${tokens[i + 1]}',
+          digits: digits,
+          fullPlate: '$letters $digits',
           isDigitsFirst: false,
         ));
-        i = i + 2;
+        i = colA.nextIdx + 1;
         continue;
       }
 
-      // Pattern C: Digits then Letters ("2816 د ب ن")
+      // Pattern C/D: Digits then Letters (separated, glued, or mixed like "3253 بن ق")
       if (_isPlateDigits(tokens[i])) {
-        final lC = <String>[];
-        int k = i + 1;
-        while (k < tokens.length && _isLetter(tokens[k])) {
-          lC.add(tokens[k]);
-          k++;
-        }
-        if (lC.length >= 2 && lC.length <= 4) {
+        final colC = _collectLetters(tokens, i + 1);
+        if (colC.letters.length >= 2 && colC.letters.length <= 4) {
+          final letters = colC.letters.join(' ');
+          final digits = tokens[i];
           matches.add(_PlateMatch(
             startIndex: i,
-            endIndex: k,
-            letters: lC.join(' '),
-            digits: tokens[i],
-            fullPlate: '${lC.join(' ')} ${tokens[i]}',
-            isDigitsFirst: true,
-          ));
-          i = k;
-          continue;
-        }
-
-        // Pattern D: Digits then GluedLetters ("2816 دبن")
-        if (i + 1 < tokens.length && _isGluedLetters(tokens[i + 1])) {
-          final letters = tokens[i + 1].split('').join(' ');
-          matches.add(_PlateMatch(
-            startIndex: i,
-            endIndex: i + 2,
+            endIndex: colC.nextIdx,
             letters: letters,
-            digits: tokens[i],
-            fullPlate: '$letters ${tokens[i]}',
+            digits: digits,
+            fullPlate: '$letters $digits',
             isDigitsFirst: true,
           ));
-          i = i + 2;
+          i = colC.nextIdx;
           continue;
         }
       }
@@ -557,11 +632,16 @@ class ArabicVoiceNormalizer {
       final brandRes = _extractBrandFromWords(contextWords);
       final note = _extractNoteFromWords(brandRes.remaining, stickyNote: stickyNote);
 
-      final isComplete = match.digits.length == 4 ||
-          pIdx + 1 < matches.length ||
+      final letterCount = match.letters.replaceAll(' ', '').length;
+      final hasTrailingContext = pIdx + 1 < matches.length ||
           nextWords.isNotEmpty ||
           brandRes.brand != '-' ||
           note != (stickyNote ?? '-');
+      // When digits come first ("3253 ب ن"), wait for a 3rd letter before
+      // immediate commit unless followed by a brand/note/next plate.
+      final isComplete = match.isDigitsFirst
+          ? (match.digits.length == 4 && letterCount >= 3) || hasTrailingContext
+          : match.digits.length == 4 || hasTrailingContext;
 
       results.add(ParsedPlateData(
         fullPlate: match.fullPlate,

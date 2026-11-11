@@ -36,7 +36,7 @@ jobs:
       - name: Build APK (Release)
         run: |
           flutter build apk --release
-          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/AIMS-Mobile-v1.0.5.apk
+          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/AIMS-Mobile-v1.0.6.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -48,17 +48,18 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
         with:
-          tag_name: v1.0.5
-          name: "AIMS-Mobile v1.0.5 (Restored Inspection Location & Reference Columns)"
+          tag_name: v1.0.6
+          name: "AIMS-Mobile v1.0.6 (Fix Missing Last Letter in Voice Capture)"
           draft: false
           prerelease: false
           make_latest: true
           body: |
-            ## 🚗 AIMS-Mobile / TargaRadar APK Release v1.0.5
-            - Restored Location (Google Maps link) and all original reference sheet columns in Inspection export Excel.
-            - Pre-configured Groq LPU AI Fallback Engine with client API key.
-            - Strict note filter: rejects random letters and only registers explicit notes or verified keywords.
-            - Inspection voice filter: strictly captures plate numbers without stray notes.
+            ## 🚗 AIMS-Mobile / TargaRadar APK Release v1.0.6
+            - Fixed premature commit on digits-first speech so the 3rd/last letter is never cut off.
+            - Fixed in-place plate upgrade when trailing letters arrive after initial capture.
+            - Unified glued + single Arabic letter matching (e.g. "3253 بن ق" / "3253 ب نق").
+            - Restored Location (Google Maps link) and all reference sheet columns in Inspection Excel.
+            - Strict note filter & pre-configured Groq LPU AI fallback engine.
           files: |
             build/app/outputs/flutter-apk/app-release.apk
-            build/app/outputs/flutter-apk/AIMS-Mobile-v1.0.5.apk
+            build/app/outputs/flutter-apk/AIMS-Mobile-v1.0.6.apk

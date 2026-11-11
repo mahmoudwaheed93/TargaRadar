@@ -268,7 +268,9 @@ class CarRecordProvider extends ChangeNotifier {
       onOrphanData: _handleOrphanData,
       onResult: (rawTranscript, extractedPlates, slots, normalized) {
         _currentTranscript = rawTranscript;
-        _currentSlots = slots;
+        if (slots.isNotEmpty) {
+          _currentSlots = slots;
+        }
 
         // Process special mode sticky notes (O(1) checks without re-normalizing)
         if (normalized.contains('بدايه جراج يمين') || normalized.contains('جراج يمين')) {
@@ -286,14 +288,18 @@ class CarRecordProvider extends ChangeNotifier {
           _ingestPlate(plateData, sortAuditProvider, onPlateAdded);
         }
 
-        // 2. Debounce trailing incomplete plate (e.g. 2 or 3 digits at the end of speech)
-        // If the speaker pauses for 450ms without speaking a 4th digit, commit it cleanly!
+        // 2. Debounce trailing incomplete plate (e.g. 2-letter digits-first or <4 digits)
+        // Gives the speaker 650ms to finish the final letter/digit before committing.
         _incompletePlateTimer?.cancel();
+        _pendingIncompletePlate = null;
         if (extractedPlates.isNotEmpty && !extractedPlates.last.isComplete) {
           final pending = extractedPlates.last;
-          _incompletePlateTimer = Timer(const Duration(milliseconds: 450), () {
-            if (!_isListening) return;
-            _ingestPlate(pending, sortAuditProvider, onPlateAdded);
+          _pendingIncompletePlate = () => _ingestPlate(pending, sortAuditProvider, onPlateAdded);
+          _incompletePlateTimer = Timer(const Duration(milliseconds: 650), () {
+            final flush = _pendingIncompletePlate;
+            _pendingIncompletePlate = null;
+            if (!_isListening || flush == null) return;
+            flush();
             notifyListeners();
           });
         }
@@ -305,6 +311,7 @@ class CarRecordProvider extends ChangeNotifier {
         notifyListeners();
       },
       onDone: () {
+        _flushPendingIncompletePlate();
         _isListening = false;
         _stopTimer();
         notifyListeners();
@@ -353,14 +360,14 @@ class CarRecordProvider extends ChangeNotifier {
       return;
     }
 
-    // In-place upgrade defense: if the previous card was inserted within 4 seconds
-    // and is a prefix of the new plate (e.g. "د ب ق 28" upgraded to "د ب ق 2852"):
+    // In-place upgrade defense: if the previous card was inserted within 5 seconds
+    // and received trailing digits ("د ب ق 28" -> "د ب ق 2852") or trailing letters
+    // ("ب ن 3253" -> "ب ن ق 3253"):
     if (_records.isNotEmpty) {
       final prev = _records.first;
       final prevNorm = ArabicVoiceNormalizer.normalizePlateForMatch(prev.plateNumber);
-      if (norm.length > prevNorm.length &&
-          norm.startsWith(prevNorm.substring(0, prevNorm.length.clamp(0, norm.length - 1))) &&
-          DateTime.now().difference(prev.registrationDate).inSeconds <= 4) {
+      if (DateTime.now().difference(prev.registrationDate).inSeconds <= 5 &&
+          ArabicVoiceNormalizer.isPlateUpgrade(prev.plateNumber, plateData.fullPlate)) {
         _recordedPlates.remove(prevNorm);
         _recordedPlates.add(norm);
         _lastKey = norm;
@@ -374,6 +381,7 @@ class CarRecordProvider extends ChangeNotifier {
         _lastReadPlate = plateData.fullPlate;
         _lastReadIsWanted = auditLog.isMatched;
         _lastMatchResult = auditLog;
+        _applySlotsFromPlate(plateData);
 
         final updated = CarRecord(
           id: prev.id,
@@ -396,7 +404,9 @@ class CarRecordProvider extends ChangeNotifier {
         if (prev.id != null) {
           unawaited(_dbHelper.updateCarRecord(updated));
         }
-        onPlateAdded(plateData.fullPlate, auditLog.isMatched, auditLog.carType);
+        if (auditLog.isMatched && !prev.isMatched) {
+          onPlateAdded(plateData.fullPlate, auditLog.isMatched, auditLog.carType);
+        }
         return;
       }
     }
@@ -416,21 +426,7 @@ class CarRecordProvider extends ChangeNotifier {
     _lastReadIsWanted = auditLog.isMatched;
     _lastMatchResult = auditLog;
 
-    // Reflect into full 7-slot visualizer
-    final lClean = plateData.letters.replaceAll(RegExp(r'\s+'), '');
-    final lSlots = lClean.length > 3 ? lClean.substring(lClean.length - 3) : lClean;
-    final lList = lSlots.split('');
-    final dList = plateData.digits.split('');
-
-    _currentSlots = {
-      'l1': lList.isNotEmpty ? lList[0] : '-',
-      'l2': lList.length > 1 ? lList[1] : '-',
-      'l3': lList.length > 2 ? lList[2] : '-',
-      'd1': dList.isNotEmpty ? dList[0] : '-',
-      'd2': dList.length > 1 ? dList[1] : '-',
-      'd3': dList.length > 2 ? dList[2] : '-',
-      'd4': dList.length > 3 ? dList[3] : '-',
-    };
+    _applySlotsFromPlate(plateData);
 
     // Instant O(1) in-memory session update - zero latency, zero frame drops!
     final location = _lastKnownLocation;
@@ -475,6 +471,30 @@ class CarRecordProvider extends ChangeNotifier {
   }
 
   Timer? _incompletePlateTimer;
+  VoidCallback? _pendingIncompletePlate;
+
+  void _flushPendingIncompletePlate() {
+    _incompletePlateTimer?.cancel();
+    final flush = _pendingIncompletePlate;
+    _pendingIncompletePlate = null;
+    if (flush != null) flush();
+  }
+
+  void _applySlotsFromPlate(ParsedPlateData plateData) {
+    final lClean = plateData.letters.replaceAll(RegExp(r'\s+'), '');
+    final lSlots = lClean.length > 3 ? lClean.substring(lClean.length - 3) : lClean;
+    final lList = lSlots.split('');
+    final dList = plateData.digits.split('');
+    _currentSlots = {
+      'l1': lList.isNotEmpty ? lList[0] : '-',
+      'l2': lList.length > 1 ? lList[1] : '-',
+      'l3': lList.length > 2 ? lList[2] : '-',
+      'd1': dList.isNotEmpty ? dList[0] : '-',
+      'd2': dList.length > 1 ? dList[1] : '-',
+      'd3': dList.length > 2 ? dList[2] : '-',
+      'd4': dList.length > 3 ? dList[3] : '-',
+    };
+  }
   Timer? _aiTimer;
   static const Duration _aiDebounce = Duration(milliseconds: 750);
 
@@ -548,7 +568,7 @@ class CarRecordProvider extends ChangeNotifier {
   }
 
   Future<void> stopVoiceListening() async {
-    _incompletePlateTimer?.cancel();
+    _flushPendingIncompletePlate();
     _aiTimer?.cancel();
     await _speechService.stopListening();
     _isListening = false;

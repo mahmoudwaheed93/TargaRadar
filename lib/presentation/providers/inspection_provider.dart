@@ -86,6 +86,15 @@ class InspectionProvider extends ChangeNotifier {
     }
   }
   Timer? _incompletePlateTimer;
+  VoidCallback? _pendingIncompletePlate;
+  DateTime? _lastIngestedAt;
+
+  void _flushPendingIncompletePlate() {
+    _incompletePlateTimer?.cancel();
+    final flush = _pendingIncompletePlate;
+    _pendingIncompletePlate = null;
+    if (flush != null) flush();
+  }
   String? _lastKey;
   int _orphanSession = -1;
   String? _orphanTarget;
@@ -210,13 +219,16 @@ class InspectionProvider extends ChangeNotifier {
       return;
     }
 
-    // In-place upgrade defense: if the previous entry in _entries is a prefix of key:
-    if (_entries.isNotEmpty) {
+    // In-place upgrade defense: handles both digit extensions and trailing letter extensions
+    if (_entries.isNotEmpty &&
+        _lastIngestedAt != null &&
+        DateTime.now().difference(_lastIngestedAt!).inSeconds <= 5) {
       final prev = _entries.first;
-      if (key.length > prev.key.length && key.startsWith(prev.key.substring(0, prev.key.length - 1))) {
+      if (ArabicVoiceNormalizer.isPlateUpgrade(prev.plate, p.fullPlate)) {
         _seen.remove(prev.key);
         _seen.add(key);
         _lastKey = key;
+        _lastIngestedAt = DateTime.now();
         final row = _rowFor(key);
         final updated = InspectionEntry(
           id: prev.id,
@@ -229,7 +241,7 @@ class InspectionProvider extends ChangeNotifier {
           gpsUrl: prev.gpsUrl,
         );
         _entries[0] = updated;
-        if (updated.inSheet) onMatch(updated);
+        if (updated.inSheet && !prev.inSheet) onMatch(updated);
         notifyListeners();
         return;
       }
@@ -237,6 +249,7 @@ class InspectionProvider extends ChangeNotifier {
 
     _seen.add(key);
     _lastKey = key;
+    _lastIngestedAt = DateTime.now();
 
     final row = _rowFor(key);
     final now = DateTime.now();
@@ -272,7 +285,9 @@ class InspectionProvider extends ChangeNotifier {
       onOrphanNote: _handleOrphanNote,
       onOrphanData: _handleOrphanData,
       onResult: (raw, plates, slots, normalized) {
-        _slots = slots;
+        if (slots.isNotEmpty) {
+          _slots = slots;
+        }
 
         // 1. Process all completed plates immediately (zero wait)
         final completePlates = plates.where((p) => p.isComplete).toList();
@@ -280,13 +295,17 @@ class InspectionProvider extends ChangeNotifier {
           _ingestInspectionPlate(p, onMatch);
         }
 
-        // 2. Debounce trailing incomplete plate (e.g. 2 or 3 digits at the end of speech)
+        // 2. Debounce trailing incomplete plate (e.g. 2-letter digits-first or <4 digits)
         _incompletePlateTimer?.cancel();
+        _pendingIncompletePlate = null;
         if (plates.isNotEmpty && !plates.last.isComplete) {
           final pending = plates.last;
-          _incompletePlateTimer = Timer(const Duration(milliseconds: 450), () {
-            if (!_isListening) return;
-            _ingestInspectionPlate(pending, onMatch);
+          _pendingIncompletePlate = () => _ingestInspectionPlate(pending, onMatch);
+          _incompletePlateTimer = Timer(const Duration(milliseconds: 650), () {
+            final flush = _pendingIncompletePlate;
+            _pendingIncompletePlate = null;
+            if (!_isListening || flush == null) return;
+            flush();
             notifyListeners();
           });
         }
@@ -294,6 +313,7 @@ class InspectionProvider extends ChangeNotifier {
         notifyListeners();
       },
       onDone: () {
+        _flushPendingIncompletePlate();
         _isListening = false;
         _ticker?.cancel();
         notifyListeners();
@@ -336,7 +356,7 @@ class InspectionProvider extends ChangeNotifier {
   }
 
   Future<void> stopListening() async {
-    _incompletePlateTimer?.cancel();
+    _flushPendingIncompletePlate();
     await _speech.stopListening();
     _isListening = false;
     _ticker?.cancel();
