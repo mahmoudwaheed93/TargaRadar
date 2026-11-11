@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'speech_to_text_service_interface.dart';
 import 'speech_to_text_service_mobile.dart';
 import 'speech_to_text_service_web.dart';
@@ -9,13 +10,40 @@ class SpeechService {
   static final SpeechService instance = SpeechService._init();
   SpeechService._init();
 
+  static const String _prefOnDeviceKey = 'prefer_on_device_speech';
+
   late final SpeechPlatformService _platformService = kIsWeb
       ? WebSpeechPlatformService()
       : MobileSpeechPlatformService();
 
+  final ValueNotifier<bool> preferOnDeviceNotifier = ValueNotifier<bool>(false);
+  bool _prefLoaded = false;
+
+  bool get preferOnDevice => preferOnDeviceNotifier.value;
   bool get isListening => _platformService.isListening;
 
-  Future<bool> initSpeech() => _platformService.initSpeech();
+  Future<void> _ensurePrefLoaded() async {
+    if (_prefLoaded) return;
+    _prefLoaded = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      preferOnDeviceNotifier.value = prefs.getBool(_prefOnDeviceKey) ?? false;
+    } catch (_) {}
+  }
+
+  Future<void> setPreferOnDevice(bool value) async {
+    preferOnDeviceNotifier.value = value;
+    _prefLoaded = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_prefOnDeviceKey, value);
+    } catch (_) {}
+  }
+
+  Future<bool> initSpeech() async {
+    await _ensurePrefLoaded();
+    return _platformService.initSpeech();
+  }
 
   Future<void> startListening({
     required Function(
@@ -29,7 +57,10 @@ class SpeechService {
     void Function(String? note, int session)? onOrphanNote,
     void Function(OrphanVoiceData data, int session)? onOrphanData,
   }) async {
+    await _ensurePrefLoaded();
     await _platformService.startListening(
+      preferOnDevice: preferOnDeviceNotifier.value,
+      onFallbackToCloud: () => setPreferOnDevice(false),
       onResult: (candidates, isFinal) {
         // High-performance single-pass pipeline with N-best alternate recovery:
         // Scores Google STT alternate hypotheses in <0.2ms so dropped letters

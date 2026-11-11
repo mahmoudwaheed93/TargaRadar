@@ -370,14 +370,24 @@ class ArabicVoiceNormalizer {
         .trim();
   }
 
+  static final Map<String, String> _plateKeyCache = {};
+
   /// Canon format key for fast O(1) index matching (always letters + digits, strips punctuation)
   static String plateKey(String plate) {
+    if (plate.isEmpty) return '';
+    final cached = _plateKeyCache[plate];
+    if (cached != null) return cached;
     final norm = normalizePlateForMatch(plate)
         .replaceAll(RegExp(r'[\u064B-\u065F\u0670\u0640]'), '');
     if (norm.isEmpty) return '';
     final letters = norm.replaceAll(RegExp(r'[^ا-ي]'), '');
     final digits = norm.replaceAll(RegExp(r'[^\d]'), '');
-    return '$letters$digits';
+    final out = '$letters$digits';
+    if (_plateKeyCache.length >= 500) {
+      _plateKeyCache.remove(_plateKeyCache.keys.first);
+    }
+    _plateKeyCache[plate] = out;
+    return out;
   }
 
   static final RegExp _singleLetter = RegExp(r'^[ا-ي]$');

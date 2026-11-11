@@ -6,10 +6,13 @@ abstract class SpeechPlatformService {
   /// Increases every time the recogniser (re)starts, so callers can tell
   /// which utterance a transcript belongs to.
   int get session;
+
   Future<bool> initSpeech();
   Future<void> startListening({
     required Function(List<String> candidates, bool isFinal) onResult,
     required VoidCallback onDone,
+    bool preferOnDevice = false,
+    VoidCallback? onFallbackToCloud,
   });
   Future<void> stopListening();
 }

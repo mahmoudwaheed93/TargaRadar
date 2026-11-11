@@ -17,6 +17,8 @@ class WebSpeechPlatformService implements SpeechPlatformService {
   Future<void> startListening({
     required Function(List<String> candidates, bool isFinal) onResult,
     required VoidCallback onDone,
+    bool preferOnDevice = false,
+    VoidCallback? onFallbackToCloud,
   }) async {
     _isListening = true;
   }

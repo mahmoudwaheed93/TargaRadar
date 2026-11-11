@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import '../../core/services/ai_plate_refiner.dart';
 import '../../core/services/arabic_voice_normalizer.dart';
 import '../../core/services/excel_table_service.dart';
+import '../../core/services/sound_alert_service.dart';
 import '../../core/services/speech_service.dart';
 
 /// One plate heard during an inspection session.
@@ -88,12 +89,14 @@ class InspectionProvider extends ChangeNotifier {
   }
   Timer? _incompletePlateTimer;
   Timer? _aiTimer;
-  static const Duration _aiDebounce = Duration(milliseconds: 450);
+  static const Duration _aiDebounce = Duration(milliseconds: 250);
   VoidCallback? _pendingIncompletePlate;
   DateTime? _lastIngestedAt;
   String _lastProcessedTranscript = '';
   String _currentTranscript = '';
   String get currentTranscript => _currentTranscript;
+  int _entriesVersion = 0;
+  int get entriesVersion => _entriesVersion;
 
   void _flushPendingIncompletePlate() {
     _incompletePlateTimer?.cancel();
@@ -204,6 +207,7 @@ class InspectionProvider extends ChangeNotifier {
       final i = _entries.indexWhere((e) => e.key == key);
       if (i != -1 && _entries[i].note != note) {
         _entries[i] = _entries[i].copyWith(note: note);
+        _entriesVersion++;
         notifyListeners();
       }
     }
@@ -247,6 +251,7 @@ class InspectionProvider extends ChangeNotifier {
           gpsUrl: prev.gpsUrl,
         );
         _entries[0] = updated;
+        _entriesVersion++;
         if (updated.inSheet && !prev.inSheet) onMatch(updated);
         notifyListeners();
         return;
@@ -270,12 +275,14 @@ class InspectionProvider extends ChangeNotifier {
       gpsUrl: _lastKnownLocation?.gpsUrl ?? '',
     );
     _entries.insert(0, entry);
+    _entriesVersion++;
     if (entry.inSheet) onMatch(entry);
     notifyListeners();
   }
 
   Future<void> startListening({required void Function(InspectionEntry entry) onMatch}) async {
     unawaited(_refreshLocation());
+    unawaited(SoundAlertService.instance.warmUp());
     if (_isListening) return;
     _orphanSession = -1;
     _isListening = true;
@@ -314,7 +321,7 @@ class InspectionProvider extends ChangeNotifier {
             _ingestInspectionPlate(pending, onMatch);
           } else {
             _pendingIncompletePlate = () => _ingestInspectionPlate(pending, onMatch);
-            _incompletePlateTimer = Timer(const Duration(milliseconds: 350), () {
+            _incompletePlateTimer = Timer(const Duration(milliseconds: 200), () {
               final flush = _pendingIncompletePlate;
               _pendingIncompletePlate = null;
               if (!_isListening || flush == null) return;
@@ -379,6 +386,7 @@ class InspectionProvider extends ChangeNotifier {
         gpsUrl: _lastKnownLocation?.gpsUrl ?? '',
       );
       _entries.insert(0, entry);
+    _entriesVersion++;
       if (entry.inSheet) {
         matchedCount++;
         onMatch(entry);
@@ -422,6 +430,7 @@ class InspectionProvider extends ChangeNotifier {
     final i = _entries.indexWhere((e) => e.id == id);
     if (i == -1) return;
     _entries[i] = _entries[i].copyWith(cancelled: cancelled);
+    _entriesVersion++;
     notifyListeners();
   }
 
@@ -430,11 +439,13 @@ class InspectionProvider extends ChangeNotifier {
     if (i == -1) return;
     _seen.remove(_entries[i].key);
     _entries.removeAt(i);
+    _entriesVersion++;
     notifyListeners();
   }
 
   void clearSession() {
     _entries.clear();
+    _entriesVersion++;
     _seen.clear();
     _currentTranscript = '';
     notifyListeners();

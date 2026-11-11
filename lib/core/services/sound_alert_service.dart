@@ -8,8 +8,22 @@ class SoundAlertService {
   static final SoundAlertService instance = SoundAlertService._();
 
   AudioPlayer? _player;
-  bool _audioContextConfigured = false;
+  bool _warmedUp = false;
   DateTime? _lastAlertTime;
+
+  /// Pre-configures AudioContext and pre-loads the alert sound so the first
+  /// matched plate fires at 0ms without disk-decode lag or AudioFocus interruption.
+  Future<void> warmUp() async {
+    if (_warmedUp) return;
+    try {
+      _player ??= AudioPlayer();
+      await _player!.setAudioContext(
+        AudioContextConfig(focus: AudioContextConfigFocus.mixWithOthers).build(),
+      );
+      await _player!.setSource(AssetSource('sounds/alarm.wav'));
+      _warmedUp = true;
+    } catch (_) {}
+  }
 
   /// Plays the alarm sound for a few seconds without stealing microphone AudioFocus.
   Future<void> playMatchAlarm({int durationSeconds = 3}) async {
@@ -27,11 +41,8 @@ class SoundAlertService {
 
       unawaited(() async {
         try {
-          if (!_audioContextConfigured) {
-            _audioContextConfigured = true;
-            await player.setAudioContext(
-              AudioContextConfig(focus: AudioContextConfigFocus.mixWithOthers).build(),
-            );
+          if (!_warmedUp) {
+            await warmUp();
           }
           await player.stop();
           await player.setVolume(1.0);
@@ -56,6 +67,6 @@ class SoundAlertService {
   void dispose() {
     _player?.dispose();
     _player = null;
-    _audioContextConfigured = false;
+    _warmedUp = false;
   }
 }

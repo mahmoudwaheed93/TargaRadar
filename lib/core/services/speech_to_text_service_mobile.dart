@@ -3,18 +3,15 @@ import 'package:flutter/foundation.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'speech_to_text_service_interface.dart';
 
-/// Set to true ONLY if the Arabic offline speech pack is explicitly installed on the phone.
-/// Setting to false ensures instant, reliable recognition via Google speech streaming on all devices.
-const bool kPreferOnDeviceSpeech = false;
-
 class MobileSpeechPlatformService implements SpeechPlatformService {
   final stt.SpeechToText _speech = stt.SpeechToText();
   bool _isInitialized = false;
   bool _wantListening = false;
   bool _isStarting = false;
-  bool _useOnDevice = kPreferOnDeviceSpeech;
+  bool _useOnDevice = false;
   Function(List<String> candidates, bool isFinal)? _onResult;
   VoidCallback? _onDone;
+  VoidCallback? _onFallbackToCloud;
   String? _localeId;
   Timer? _restartTimer;
 
@@ -34,12 +31,16 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
         onError: (val) {
           debugPrint('Speech error: ${val.errorMsg} permanent=${val.permanent}');
           if (_wantListening) {
+            // Instant fallback from on-device to Google Cloud streaming if offline pack fails
             if (_useOnDevice) {
-              debugPrint('On-device speech error, falling back to Google Cloud recognition.');
+              debugPrint('On-device speech unavailable, switching seamlessly to Cloud streaming.');
               _useOnDevice = false;
+              _onFallbackToCloud?.call();
+              _restartSoon(delayMs: 20);
+              return;
             }
             if (!val.permanent) {
-              _restartSoon();
+              _restartSoon(delayMs: 20);
             } else {
               _wantListening = false;
               _onDone?.call();
@@ -49,7 +50,7 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
         onStatus: (val) {
           debugPrint('Speech status: $val');
           if (_wantListening && (val == 'done' || val == 'notListening')) {
-            _restartSoon();
+            _restartSoon(delayMs: 20);
           }
         },
       );
@@ -74,7 +75,7 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
     }
   }
 
-  void _restartSoon({int delayMs = 25}) {
+  void _restartSoon({int delayMs = 20}) {
     if (!_wantListening || _isStarting) return;
     _restartTimer?.cancel();
     _restartTimer = Timer(Duration(milliseconds: delayMs), () {
@@ -82,8 +83,8 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
       if (!_speech.isListening) {
         _listen();
       } else {
-        // Native AudioRecord still winding down — retry once shortly so the mic never dies silently
-        _restartSoon(delayMs: 60);
+        // Native AudioRecord still winding down — retry shortly so the mic never dies silently
+        _restartSoon(delayMs: 50);
       }
     });
   }
@@ -97,7 +98,6 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
       await _speech.listen(
         listenOptions: stt.SpeechListenOptions(
           localeId: _localeId ?? 'ar_SA',
-          // dictation mode keeps listening continuously without killing the session after single words
           listenMode: stt.ListenMode.dictation,
           partialResults: true,
           cancelOnError: false,
@@ -129,6 +129,7 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
       debugPrint('Error during speech listen: $e');
       if (_useOnDevice) {
         _useOnDevice = false;
+        _onFallbackToCloud?.call();
         needFallback = true;
       } else {
         _wantListening = false;
@@ -139,7 +140,7 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
     }
 
     if (needFallback && _wantListening) {
-      _restartSoon();
+      _restartSoon(delayMs: 20);
     }
   }
 
@@ -147,6 +148,8 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
   Future<void> startListening({
     required Function(List<String> candidates, bool isFinal) onResult,
     required VoidCallback onDone,
+    bool preferOnDevice = false,
+    VoidCallback? onFallbackToCloud,
   }) async {
     final available = await initSpeech();
     if (!available) {
@@ -155,8 +158,9 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
     }
     _onResult = onResult;
     _onDone = onDone;
+    _onFallbackToCloud = onFallbackToCloud;
     _wantListening = true;
-    _useOnDevice = kPreferOnDeviceSpeech;
+    _useOnDevice = preferOnDevice;
     await _listen();
   }
 

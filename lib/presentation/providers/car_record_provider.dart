@@ -5,6 +5,7 @@ import '../../core/services/ai_plate_refiner.dart';
 import '../../core/services/arabic_voice_normalizer.dart';
 import '../../core/services/excel_export_service.dart';
 import '../../core/services/location_service.dart';
+import '../../core/services/sound_alert_service.dart';
 import '../../core/services/speech_service.dart';
 import '../../data/datasources/database_helper.dart';
 import '../../data/models/car_record_model.dart';
@@ -115,6 +116,7 @@ class CarRecordProvider extends ChangeNotifier {
     if (changed) {
       final updated = existing.copyWith(carType: curBrand, notes: curNote);
       _records[idx] = updated;
+      _recordsVersion++;
       _recentRecords = _records.take(10).toList();
       notifyListeners();
       _persistRecordUpdate(key, updated);
@@ -148,6 +150,9 @@ class CarRecordProvider extends ChangeNotifier {
 
   String get _recorderKey => '${_recorderKeyBase}_$_currentUserId';
 
+  int _recordsVersion = 0;
+  int get recordsVersion => _recordsVersion;
+  int get matchedCount => _records.where((r) => r.isMatched).length;
   List<CarRecord> get records => _records;
   List<CarRecord> get recentRecords => _recentRecords;
   bool get isLoading => _isLoading;
@@ -225,6 +230,7 @@ class CarRecordProvider extends ChangeNotifier {
 
     try {
       _records = await _dbHelper.getAllCarRecords();
+      _recordsVersion++;
       _recentRecords = await _dbHelper.getRecentCarRecords(limit: 10);
       for (final r in _records) {
         final key = ArabicVoiceNormalizer.plateKey(r.plateNumber);
@@ -267,6 +273,7 @@ class CarRecordProvider extends ChangeNotifier {
     _listeningTimer = 0;
     _orphanSession = -1;
     unawaited(_refreshLocation()); // warm up GPS while the user starts talking
+    unawaited(SoundAlertService.instance.warmUp());
     _startTimer();
     notifyListeners();
 
@@ -307,7 +314,7 @@ class CarRecordProvider extends ChangeNotifier {
             _ingestPlate(pending, sortAuditProvider, onPlateAdded);
           } else {
             _pendingIncompletePlate = () => _ingestPlate(pending, sortAuditProvider, onPlateAdded);
-            _incompletePlateTimer = Timer(const Duration(milliseconds: 350), () {
+            _incompletePlateTimer = Timer(const Duration(milliseconds: 200), () {
               final flush = _pendingIncompletePlate;
               _pendingIncompletePlate = null;
               if (!_isListening || flush == null) return;
@@ -373,7 +380,8 @@ class CarRecordProvider extends ChangeNotifier {
           final updated = existing.copyWith(carType: curBrand, notes: curNote);
           _records[idx] = updated;
           _recordByKey[norm] = updated;
-          _recentRecords = _records.take(10).toList();
+          _recordsVersion++;
+      _recentRecords = _records.take(10).toList();
           notifyListeners();
           _persistRecordUpdate(norm, updated);
         }
@@ -422,7 +430,8 @@ class CarRecordProvider extends ChangeNotifier {
         );
         _records[0] = updated;
         _recordByKey[norm] = updated;
-        _recentRecords = _records.take(10).toList();
+        _recordsVersion++;
+      _recentRecords = _records.take(10).toList();
         notifyListeners();
 
         if (existingId != null) {
@@ -480,7 +489,8 @@ class CarRecordProvider extends ChangeNotifier {
 
     _records.insert(0, record);
     _recordByKey[norm] = record;
-    _recentRecords = _records.take(10).toList();
+    _recordsVersion++;
+      _recentRecords = _records.take(10).toList();
     notifyListeners();
 
     // Persist to local database in background without interrupting audio stream
@@ -539,7 +549,7 @@ class CarRecordProvider extends ChangeNotifier {
     };
   }
   Timer? _aiTimer;
-  static const Duration _aiDebounce = Duration(milliseconds: 450);
+  static const Duration _aiDebounce = Duration(milliseconds: 250);
 
   void _scheduleAiFallback(
     String rawTranscript,
@@ -704,6 +714,7 @@ class CarRecordProvider extends ChangeNotifier {
       );
       _records.removeWhere((r) => r.plateNumber == record.plateNumber && r.id == null);
       _records.insert(0, recordWithId);
+      _recordsVersion++;
       _recentRecords = _records.take(10).toList();
       return true;
     } catch (e) {
@@ -755,7 +766,8 @@ class CarRecordProvider extends ChangeNotifier {
       final idx = _records.indexWhere((r) => r.id == id);
       if (idx != -1) {
         _records[idx] = _records[idx].copyWith(notes: note);
-        _recentRecords = _records.take(10).toList();
+        _recordsVersion++;
+      _recentRecords = _records.take(10).toList();
         notifyListeners();
       }
     } catch (e) {
@@ -777,6 +789,7 @@ class CarRecordProvider extends ChangeNotifier {
   Future<void> clearAllRecords() async {
     await _dbHelper.clearAllRecords();
     _records.clear();
+    _recordsVersion++;
     _recentRecords.clear();
     _recordedPlates.clear();
     _recordIds.clear();

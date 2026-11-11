@@ -1,5 +1,6 @@
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/services/sound_alert_service.dart';
+import '../../core/widgets/live_speech_ticker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
@@ -452,10 +453,8 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final recordProvider = context.watch<CarRecordProvider>();
-    final auditProvider = context.watch<ExcelSortAuditProvider>();
-
-    final matchedCount = recordProvider.records.where((r) => r.isMatched).length;
+    final recordProvider = context.read<CarRecordProvider>();
+    final auditProvider = context.read<ExcelSortAuditProvider>();
 
     return Scaffold(
       backgroundColor: const Color(0xFF10141D),
@@ -469,15 +468,18 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
               style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1E293B),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                '${recordProvider.records.length} لوحة',
-                style: const TextStyle(color: AppColors.primary, fontSize: 11, fontWeight: FontWeight.bold),
+            Selector<CarRecordProvider, int>(
+              selector: (_, p) => p.recordsVersion,
+              builder: (_, __, ___) => Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${recordProvider.records.length} لوحة',
+                  style: const TextStyle(color: AppColors.primary, fontSize: 11, fontWeight: FontWeight.bold),
+                ),
               ),
             ),
           ],
@@ -511,7 +513,9 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
           ),
         ],
       ),
-      body: CustomScrollView(
+      body: Selector<CarRecordProvider, (int, bool)>(
+        selector: (_, p) => (p.recordsVersion, _useTextInput),
+        builder: (context, _, __) => CustomScrollView(
         slivers: [
           SliverToBoxAdapter(
             child: Column(
@@ -566,19 +570,23 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
                     ),
                   ),
                 ),
-                if (recordProvider.stickyNote != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: AppColors.warning.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.warning.withValues(alpha: 0.4)),
-                    ),
-                    child: Text(
-                      recordProvider.stickyNote!,
-                      style: const TextStyle(color: AppColors.warning, fontSize: 11, fontWeight: FontWeight.bold),
-                    ),
-                  ),
+                Selector<CarRecordProvider, String?>(
+                  selector: (_, p) => p.stickyNote,
+                  builder: (_, sticky, __) => sticky == null
+                      ? const SizedBox.shrink()
+                      : Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppColors.warning.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppColors.warning.withValues(alpha: 0.4)),
+                          ),
+                          child: Text(
+                            sticky,
+                            style: const TextStyle(color: AppColors.warning, fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                ),
               ],
             ),
           ),
@@ -635,23 +643,24 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
                       ),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              auditProvider.sheetFileName.isEmpty
-                                  ? 'لم يتم رفع شيت بعد'
-                                  : auditProvider.sheetFileName,
-                              style: const TextStyle(color: AppColors.textSecondaryDark, fontSize: 11, fontFamily: 'monospace'),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            Text(
-                              auditProvider.totalSheetCount == 0
-                                  ? 'ارفع شيت إكسيل للمطابقة الفورية'
-                                  : '${auditProvider.totalSheetCount} سيارة بالشيت (مطابقة فورية)',
-                              style: const TextStyle(color: AppColors.primary, fontSize: 10, fontWeight: FontWeight.bold),
-                            ),
-                          ],
+                        child: Selector<ExcelSortAuditProvider, (String, int)>(
+                          selector: (_, a) => (a.sheetFileName, a.totalSheetCount),
+                          builder: (_, data, __) => Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                data.$1.isEmpty ? 'لم يتم رفع شيت بعد' : data.$1,
+                                style: const TextStyle(color: AppColors.textSecondaryDark, fontSize: 11, fontFamily: 'monospace'),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                data.$2 == 0
+                                    ? 'ارفع شيت إكسيل للمطابقة الفورية'
+                                    : '${data.$2} سيارة بالشيت (مطابقة فورية)',
+                                style: const TextStyle(color: AppColors.primary, fontSize: 10, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],
@@ -711,7 +720,7 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
                           const SizedBox(width: 6),
                           const Text('|', style: TextStyle(color: Color(0xFF334155))),
                           const SizedBox(width: 6),
-                          Text('$matchedCount', style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 12)),
+                          Text('${recordProvider.matchedCount}', style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 12)),
                           const SizedBox(width: 4),
                           const Text('مطابقة', style: TextStyle(color: AppColors.primary, fontSize: 11)),
                         ],
@@ -720,49 +729,58 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
                   ],
                 ),
 
-                // Live Listen Button
-                ElevatedButton.icon(
-                  onPressed: () async {
-                    final insp = context.read<InspectionProvider>();
-                    if (insp.isListening) await insp.stopListening();
-                    await recordProvider.toggleVoiceListening(
-                    sortAuditProvider: auditProvider,
-                    onPlateAdded: (plate, isMatched, model) {
-                      if (isMatched) {
-                        SoundAlertService.instance.playMatchAlarm(durationSeconds: 3);
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('🎯 لوحة مطابقة بالشيت: $plate ($model)'),
-                              backgroundColor: AppColors.success,
-                              duration: const Duration(seconds: 2),
-                            ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SpeechSpeedModeChip(),
+                    const SizedBox(width: 6),
+                    Selector<CarRecordProvider, (bool, int)>(
+                      selector: (_, p) => (p.isListening, p.listeningTimer),
+                      builder: (_, st, __) => ElevatedButton.icon(
+                        onPressed: () async {
+                          final insp = context.read<InspectionProvider>();
+                          if (insp.isListening) await insp.stopListening();
+                          await recordProvider.toggleVoiceListening(
+                            sortAuditProvider: auditProvider,
+                            onPlateAdded: (plate, isMatched, model) {
+                              if (isMatched) {
+                                SoundAlertService.instance.playMatchAlarm(durationSeconds: 3);
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('🎯 لوحة مطابقة بالشيت: $plate ($model)'),
+                                      backgroundColor: AppColors.success,
+                                      duration: const Duration(seconds: 2),
+                                    ),
+                                  );
+                                }
+                              }
+                            },
                           );
-                        }
-                      }
-                    },
-                    );
-                  },
-                  icon: Icon(
-                    recordProvider.isListening ? Icons.stop_rounded : Icons.mic_rounded,
-                    size: 16,
-                  ),
-                  label: Text(
-                    recordProvider.isListening ? 'إيقاف (${recordProvider.listeningTimer}s)' : 'مباشر • يستمع',
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    minimumSize: Size.zero,
-                    backgroundColor: recordProvider.isListening
-                        ? AppColors.error.withValues(alpha: 0.2)
-                        : AppColors.primary.withValues(alpha: 0.2),
-                    foregroundColor: recordProvider.isListening ? AppColors.error : AppColors.primary,
-                    side: BorderSide(
-                      color: recordProvider.isListening ? AppColors.error : AppColors.primary,
+                        },
+                        icon: Icon(
+                          st.$1 ? Icons.stop_rounded : Icons.mic_rounded,
+                          size: 16,
+                        ),
+                        label: Text(
+                          st.$1 ? 'إيقاف (${st.$2}s)' : 'مباشر • يستمع',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: Size.zero,
+                          backgroundColor: st.$1
+                              ? AppColors.error.withValues(alpha: 0.2)
+                              : AppColors.primary.withValues(alpha: 0.2),
+                          foregroundColor: st.$1 ? AppColors.error : AppColors.primary,
+                          side: BorderSide(
+                            color: st.$1 ? AppColors.error : AppColors.primary,
+                          ),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                      ),
                     ),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  ),
+                  ],
                 ),
               ],
             ),
@@ -953,9 +971,12 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text('آخر قراءة مكتملة', style: TextStyle(color: AppColors.textMutedDark, fontSize: 11)),
-                    Text(
-                      '${(recordProvider.listeningTimer ~/ 60).toString().padLeft(2, '0')}:${(recordProvider.listeningTimer % 60).toString().padLeft(2, '0')}',
-                      style: const TextStyle(color: AppColors.primary, fontSize: 11, fontFamily: 'monospace', fontWeight: FontWeight.bold),
+                    Selector<CarRecordProvider, int>(
+                      selector: (_, p) => p.listeningTimer,
+                      builder: (_, sec, __) => Text(
+                        '${(sec ~/ 60).toString().padLeft(2, '0')}:${(sec % 60).toString().padLeft(2, '0')}',
+                        style: const TextStyle(color: AppColors.primary, fontSize: 11, fontFamily: 'monospace', fontWeight: FontWeight.bold),
+                      ),
                     ),
                   ],
                 ),
@@ -987,63 +1008,43 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
                 const Text('اللوحة الحالية • جاري الالتقاط بالصوت', style: TextStyle(color: AppColors.textMutedDark, fontSize: 11)),
                 const SizedBox(height: 6),
 
-                // 7-Slots Interactive Visualizer
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _buildBigSlot(recordProvider.currentSlots['d4'] ?? '-', isDigit: true),
-                    const SizedBox(width: 4),
-                    _buildBigSlot(recordProvider.currentSlots['d3'] ?? '-', isDigit: true),
-                    const SizedBox(width: 4),
-                    _buildBigSlot(recordProvider.currentSlots['d2'] ?? '-', isDigit: true),
-                    const SizedBox(width: 4),
-                    _buildBigSlot(recordProvider.currentSlots['d1'] ?? '-', isDigit: true),
-                    const SizedBox(width: 8),
-                    Container(width: 4, height: 4, decoration: const BoxDecoration(color: Color(0xFF64748B), shape: BoxShape.circle)),
-                    const SizedBox(width: 8),
-                    _buildBigSlot(recordProvider.currentSlots['l3'] ?? '-'),
-                    const SizedBox(width: 4),
-                    _buildBigSlot(recordProvider.currentSlots['l2'] ?? '-'),
-                    const SizedBox(width: 4),
-                    _buildBigSlot(recordProvider.currentSlots['l1'] ?? '-'),
-                  ],
-                ),
-                if (recordProvider.isListening || recordProvider.currentTranscript.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF10141D),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.primary.withValues(alpha: 0.35)),
-                    ),
-                    child: Row(
+                // 7-Slots Interactive Visualizer (isolated RepaintBoundary + Selector)
+                RepaintBoundary(
+                  child: Selector<CarRecordProvider, Map<String, String>>(
+                    selector: (_, p) => p.currentSlots,
+                    builder: (_, slots, __) => Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(
-                          Icons.graphic_eq_rounded,
-                          size: 15,
-                          color: recordProvider.isListening ? AppColors.primary : AppColors.textMutedDark,
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            recordProvider.currentTranscript.isEmpty
-                                ? 'تحدث الآن... يتم تحويل الكلام لكتابة فورية'
-                                : recordProvider.currentTranscript,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: recordProvider.currentTranscript.isEmpty ? AppColors.textMutedDark : Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
+                        _buildBigSlot(slots['d4'] ?? '-', isDigit: true),
+                        const SizedBox(width: 4),
+                        _buildBigSlot(slots['d3'] ?? '-', isDigit: true),
+                        const SizedBox(width: 4),
+                        _buildBigSlot(slots['d2'] ?? '-', isDigit: true),
+                        const SizedBox(width: 4),
+                        _buildBigSlot(slots['d1'] ?? '-', isDigit: true),
+                        const SizedBox(width: 8),
+                        Container(width: 4, height: 4, decoration: const BoxDecoration(color: Color(0xFF64748B), shape: BoxShape.circle)),
+                        const SizedBox(width: 8),
+                        _buildBigSlot(slots['l3'] ?? '-'),
+                        const SizedBox(width: 4),
+                        _buildBigSlot(slots['l2'] ?? '-'),
+                        const SizedBox(width: 4),
+                        _buildBigSlot(slots['l1'] ?? '-'),
                       ],
                     ),
                   ),
-                ],
+                ),
+                Selector<CarRecordProvider, (bool, String)>(
+                  selector: (_, p) => (p.isListening, p.currentTranscript),
+                  builder: (_, st, __) {
+                    if (!st.$1 && st.$2.isEmpty) return const SizedBox.shrink();
+                    return LiveSpeechTicker(
+                      isListening: st.$1,
+                      transcript: st.$2,
+                      margin: const EdgeInsets.only(top: 8),
+                    );
+                  },
+                ),
               ],
             ),
           ),
@@ -1083,6 +1084,7 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
               ),
             ),
         ],
+        ),
       ),
     );
   }

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/services/sound_alert_service.dart';
+import '../../core/widgets/live_speech_ticker.dart';
 import '../providers/car_record_provider.dart';
 import '../providers/inspection_provider.dart';
 
@@ -264,7 +265,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final insp = context.watch<InspectionProvider>();
+    final insp = context.read<InspectionProvider>();
 
     return Scaffold(
       backgroundColor: const Color(0xFF10141D),
@@ -288,7 +289,9 @@ class _InspectionScreenState extends State<InspectionScreen> {
           ),
         ],
       ),
-      body: CustomScrollView(
+      body: Selector<InspectionProvider, (int, bool)>(
+        selector: (_, p) => (p.entriesVersion, _useTextInput),
+        builder: (context, _, __) => CustomScrollView(
         slivers: [
           SliverToBoxAdapter(
             child: Column(
@@ -305,28 +308,33 @@ class _InspectionScreenState extends State<InspectionScreen> {
                       const Icon(Icons.table_chart_rounded, color: AppColors.primary, size: 18),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              insp.hasReference ? insp.refFileName : 'لم يتم رفع شيت الفحص بعد',
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: AppColors.textSecondaryDark, fontSize: 12),
-                            ),
-                            Text(
-                              insp.hasReference ? '${insp.refCount} صف بالشيت' : 'ارفع الشيت الكبير اللي فيه بيانات اللوحات',
-                              style: const TextStyle(color: AppColors.primary, fontSize: 10, fontWeight: FontWeight.bold),
-                            ),
-                          ],
+                        child: Selector<InspectionProvider, (bool, String, int)>(
+                          selector: (_, p) => (p.hasReference, p.refFileName, p.refCount),
+                          builder: (_, ref, __) => Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                ref.$1 ? ref.$2 : 'لم يتم رفع شيت الفحص بعد',
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(color: AppColors.textSecondaryDark, fontSize: 12),
+                              ),
+                              Text(
+                                ref.$1 ? '${ref.$3} صف بالشيت' : 'ارفع الشيت الكبير اللي فيه بيانات اللوحات',
+                                style: const TextStyle(color: AppColors.primary, fontSize: 10, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                      ElevatedButton.icon(
-                        onPressed: insp.loadingFile ? null : () => _pickReference(insp),
-                        icon: insp.loadingFile
+                      Selector<InspectionProvider, (bool, bool)>(
+                        selector: (_, p) => (p.loadingFile, p.hasReference),
+                        builder: (_, st, __) => ElevatedButton.icon(
+                        onPressed: st.$1 ? null : () => _pickReference(insp),
+                        icon: st.$1
                             ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
                             : const Icon(Icons.upload_file_rounded, size: 14),
                         label: Text(
-                          insp.loadingFile ? 'جاري القراءة...' : (insp.hasReference ? 'تغيير الشيت' : 'رفع شيت'),
+                          st.$1 ? 'جاري القراءة...' : (st.$2 ? 'تغيير الشيت' : 'رفع شيت'),
                           style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
                         ),
                         style: ElevatedButton.styleFrom(
@@ -336,6 +344,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                           side: const BorderSide(color: Color(0xFF334155)),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        ),
                         ),
                       ),
                     ],
@@ -352,14 +361,14 @@ class _InspectionScreenState extends State<InspectionScreen> {
                       const SizedBox(width: 6),
                       _stat('بالشيت', '${insp.foundCount}', AppColors.primary),
                       const SizedBox(width: 6),
-                      _stat('', '${insp.notFoundCount}', AppColors.warning),
+                      _stat('غير موجودة', '${insp.notFoundCount}', AppColors.warning),
                       const SizedBox(width: 6),
                       _stat('ملغاة', '${insp.cancelledCount}', AppColors.error),
                     ],
                   ),
                 ),
 
-                // Mic + live slots
+                // Mic + live slots (isolated Selectors + RepaintBoundary)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   color: const Color(0xFF131B2A),
@@ -367,79 +376,69 @@ class _InspectionScreenState extends State<InspectionScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Flexible(
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            children: [
-                              for (final k in ['d4', 'd3', 'd2', 'd1']) ...[
-                                _slot(insp.slots[k] ?? '-', digit: true),
-                                const SizedBox(width: 4),
-                              ],
-                              const SizedBox(width: 4),
-                              for (final k in ['l3', 'l2', 'l1']) ...[
-                                _slot(insp.slots[k] ?? '-'),
-                                const SizedBox(width: 4),
-                              ],
-                            ],
+                        child: RepaintBoundary(
+                          child: Selector<InspectionProvider, Map<String, String>>(
+                            selector: (_, p) => p.slots,
+                            builder: (_, slots, __) => SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: [
+                                  for (final k in ['d4', 'd3', 'd2', 'd1']) ...[
+                                    _slot(slots[k] ?? '-', digit: true),
+                                    const SizedBox(width: 4),
+                                  ],
+                                  const SizedBox(width: 4),
+                                  for (final k in ['l3', 'l2', 'l1']) ...[
+                                    _slot(slots[k] ?? '-'),
+                                    const SizedBox(width: 4),
+                                  ],
+                                ],
+                              ),
+                            ),
                           ),
                         ),
                       ),
                       const SizedBox(width: 8),
-                      ElevatedButton.icon(
-                        onPressed: () => _toggleMic(insp),
-                        icon: Icon(insp.isListening ? Icons.stop_rounded : Icons.mic_rounded, size: 16),
-                        label: Text(
-                          insp.isListening ? 'إيقاف (${insp.listeningSeconds}s)' : 'مباشر • يستمع',
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          minimumSize: Size.zero,
-                          backgroundColor: (insp.isListening ? AppColors.error : AppColors.primary).withValues(alpha: 0.2),
-                          foregroundColor: insp.isListening ? AppColors.error : AppColors.primary,
-                          side: BorderSide(color: insp.isListening ? AppColors.error : AppColors.primary),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SpeechSpeedModeChip(),
+                          const SizedBox(width: 6),
+                          Selector<InspectionProvider, (bool, int)>(
+                            selector: (_, p) => (p.isListening, p.listeningSeconds),
+                            builder: (_, st, __) => ElevatedButton.icon(
+                              onPressed: () => _toggleMic(insp),
+                              icon: Icon(st.$1 ? Icons.stop_rounded : Icons.mic_rounded, size: 16),
+                              label: Text(
+                                st.$1 ? 'إيقاف (${st.$2}s)' : 'مباشر • يستمع',
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                minimumSize: Size.zero,
+                                backgroundColor: (st.$1 ? AppColors.error : AppColors.primary).withValues(alpha: 0.2),
+                                foregroundColor: st.$1 ? AppColors.error : AppColors.primary,
+                                side: BorderSide(color: st.$1 ? AppColors.error : AppColors.primary),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
-                if (insp.isListening || insp.currentTranscript.isNotEmpty) ...[
-                  Container(
-                    width: double.infinity,
-                    margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0F1624),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.primary.withValues(alpha: 0.35)),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.graphic_eq_rounded,
-                          size: 15,
-                          color: insp.isListening ? AppColors.primary : AppColors.textMutedDark,
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            insp.currentTranscript.isEmpty
-                                ? 'تحدث الآن... يتم تحويل الكلام لكتابة فورية'
-                                : insp.currentTranscript,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: insp.currentTranscript.isEmpty ? AppColors.textMutedDark : Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                Selector<InspectionProvider, (bool, String)>(
+                  selector: (_, p) => (p.isListening, p.currentTranscript),
+                  builder: (_, st, __) {
+                    if (!st.$1 && st.$2.isEmpty) return const SizedBox.shrink();
+                    return LiveSpeechTicker(
+                      isListening: st.$1,
+                      transcript: st.$2,
+                      margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                    );
+                  },
+                ),
 
                 // Toggle Mode (صوت مباشر / إدخال نصي)
                 Container(
@@ -621,6 +620,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
               ),
             ),
         ],
+        ),
       ),
     );
   }
