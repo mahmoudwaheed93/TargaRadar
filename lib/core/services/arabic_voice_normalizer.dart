@@ -699,16 +699,13 @@ class ArabicVoiceNormalizer {
       final brandRes = _extractBrandFromWords(contextWords);
       final note = _extractNoteFromWords(brandRes.remaining, stickyNote: stickyNote);
 
-      final letterCount = match.letters.replaceAll(' ', '').length;
       final hasTrailingContext = pIdx + 1 < matches.length ||
           nextWords.isNotEmpty ||
           brandRes.brand != '-' ||
           note != (stickyNote ?? '-');
-      // When digits come first ("3253 ب ن"), wait for a 3rd letter before
-      // immediate commit unless followed by a brand/note/next plate.
-      final isComplete = match.isDigitsFirst
-          ? (match.digits.length == 4 && letterCount >= 3) || hasTrailingContext
-          : match.digits.length == 4 || hasTrailingContext;
+      // Zero-millisecond instant commit for any 4-digit plate; any late trailing
+      // letter ("ب ن 3253" -> "ب ن ق 3253") upgrades the card in place at 0ms.
+      final isComplete = match.digits.length == 4 || hasTrailingContext;
 
       results.add(ParsedPlateData(
         fullPlate: match.fullPlate,
@@ -721,6 +718,42 @@ class ArabicVoiceNormalizer {
     }
 
     return results;
+  }
+
+  /// Extracts live 7-slot values at 0ms even while a plate is still being spoken
+  /// (e.g. "د ب", "325", or "3253 ب" before the full plate pattern completes).
+  static Map<String, String> extractLiveSlots(String normalized, List<ParsedPlateData> plates) {
+    final tail = extractUnparsedTail(normalized);
+    if (tail.isNotEmpty) {
+      final tokens = tail.split(' ').where((t) => t.isNotEmpty).toList();
+      final liveLetters = <String>[];
+      final liveDigits = <String>[];
+      for (int i = 0; i < tokens.length; i++) {
+        if (_phraseLengthAt(tokens, i) > 0) break;
+        final t = tokens[i];
+        if (_isLetter(t)) {
+          liveLetters.add(t);
+        } else if (_isGluedLetters(t)) {
+          liveLetters.addAll(t.split(''));
+        } else if (_isDigits(t)) {
+          liveDigits.addAll(t.split(''));
+        }
+      }
+      if (liveLetters.isNotEmpty || liveDigits.isNotEmpty) {
+        final lSlots = liveLetters.length > 3 ? liveLetters.sublist(liveLetters.length - 3) : liveLetters;
+        final dSlots = liveDigits.length > 4 ? liveDigits.sublist(liveDigits.length - 4) : liveDigits;
+        return {
+          'l1': lSlots.isNotEmpty ? lSlots[0] : '-',
+          'l2': lSlots.length > 1 ? lSlots[1] : '-',
+          'l3': lSlots.length > 2 ? lSlots[2] : '-',
+          'd1': dSlots.isNotEmpty ? dSlots[0] : '-',
+          'd2': dSlots.length > 1 ? dSlots[1] : '-',
+          'd3': dSlots.length > 2 ? dSlots[2] : '-',
+          'd4': dSlots.length > 3 ? dSlots[3] : '-',
+        };
+      }
+    }
+    return extractSlotsFromPlates(plates);
   }
 
   /// Extracts visualizer slot values for 7 slots from already extracted plates

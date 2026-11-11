@@ -404,6 +404,42 @@ class _InspectionScreenState extends State<InspectionScreen> {
                     ],
                   ),
                 ),
+                if (insp.isListening || insp.currentTranscript.isNotEmpty) ...[
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0F1624),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.primary.withValues(alpha: 0.35)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.graphic_eq_rounded,
+                          size: 15,
+                          color: insp.isListening ? AppColors.primary : AppColors.textMutedDark,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            insp.currentTranscript.isEmpty
+                                ? 'تحدث الآن... يتم تحويل الكلام لكتابة فورية'
+                                : insp.currentTranscript,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: insp.currentTranscript.isEmpty ? AppColors.textMutedDark : Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
 
                 // Toggle Mode (صوت مباشر / إدخال نصي)
                 Container(

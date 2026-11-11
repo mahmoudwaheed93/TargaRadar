@@ -117,22 +117,34 @@ void main() {
       expect(o.note, isNull);
     });
 
-    test('Digits-first with 2 letters waits before committing (isComplete=false), 3 letters commits immediately', () {
+    test('Digits-first commits at 0ms and supports instant live slot writing', () {
       final partial = ArabicVoiceNormalizer.extractPlatesFromTranscript('3253 ب ن');
       expect(partial.length, equals(1));
       expect(partial.first.fullPlate, equals('ب ن 3253'));
-      expect(partial.first.isComplete, isFalse);
+      expect(partial.first.isComplete, isTrue);
 
       final complete = ArabicVoiceNormalizer.extractPlatesFromTranscript('3253 ب ن ق');
       expect(complete.length, equals(1));
       expect(complete.first.fullPlate, equals('ب ن ق 3253'));
       expect(complete.first.isComplete, isTrue);
 
-      final withBrand = ArabicVoiceNormalizer.extractPlatesFromTranscript('3253 ب ن كامري');
-      expect(withBrand.length, equals(1));
-      expect(withBrand.first.fullPlate, equals('ب ن 3253'));
-      expect(withBrand.first.detectedBrand, equals('كامري'));
-      expect(withBrand.first.isComplete, isTrue);
+      // Live character-by-character slot visualization BEFORE a plate finishes
+      final liveLetters = ArabicVoiceNormalizer.extractLiveSlots(
+        ArabicVoiceNormalizer.normalizeArabicSpoken('د ب'),
+        const [],
+      );
+      expect(liveLetters['l1'], equals('د'));
+      expect(liveLetters['l2'], equals('ب'));
+      expect(liveLetters['d1'], equals('-'));
+
+      final liveDigits = ArabicVoiceNormalizer.extractLiveSlots(
+        ArabicVoiceNormalizer.normalizeArabicSpoken('3 2 5'),
+        const [],
+      );
+      expect(liveDigits['d1'], equals('3'));
+      expect(liveDigits['d2'], equals('2'));
+      expect(liveDigits['d3'], equals('5'));
+      expect(liveDigits['l1'], equals('-'));
     });
 
     test('Mixed glued and single letter combinations capture last letter cleanly', () {

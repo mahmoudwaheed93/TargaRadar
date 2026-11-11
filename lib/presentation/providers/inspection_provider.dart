@@ -92,6 +92,8 @@ class InspectionProvider extends ChangeNotifier {
   VoidCallback? _pendingIncompletePlate;
   DateTime? _lastIngestedAt;
   String _lastProcessedTranscript = '';
+  String _currentTranscript = '';
+  String get currentTranscript => _currentTranscript;
 
   void _flushPendingIncompletePlate() {
     _incompletePlateTimer?.cancel();
@@ -277,6 +279,7 @@ class InspectionProvider extends ChangeNotifier {
     if (_isListening) return;
     _orphanSession = -1;
     _isListening = true;
+    _currentTranscript = '';
     _timer = 0;
     _ticker?.cancel();
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -291,6 +294,7 @@ class InspectionProvider extends ChangeNotifier {
       onResult: (raw, plates, slots, normalized, isFinal) {
         if (raw == _lastProcessedTranscript && !isFinal) return;
         _lastProcessedTranscript = isFinal ? '' : raw;
+        _currentTranscript = raw;
         if (slots.isNotEmpty) {
           _slots = slots;
         }
@@ -310,7 +314,7 @@ class InspectionProvider extends ChangeNotifier {
             _ingestInspectionPlate(pending, onMatch);
           } else {
             _pendingIncompletePlate = () => _ingestInspectionPlate(pending, onMatch);
-            _incompletePlateTimer = Timer(const Duration(milliseconds: 550), () {
+            _incompletePlateTimer = Timer(const Duration(milliseconds: 350), () {
               final flush = _pendingIncompletePlate;
               _pendingIncompletePlate = null;
               if (!_isListening || flush == null) return;
@@ -432,6 +436,7 @@ class InspectionProvider extends ChangeNotifier {
   void clearSession() {
     _entries.clear();
     _seen.clear();
+    _currentTranscript = '';
     notifyListeners();
   }
 

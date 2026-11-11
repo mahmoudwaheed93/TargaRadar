@@ -47,6 +47,7 @@ class CarRecordProvider extends ChangeNotifier {
   final Map<String, int> _recordIds = {};
   final Map<String, String> _latestNote = {};
   final Map<String, CarRecord> _pendingUpdates = {};
+  final Map<String, String> _upgradedKeyRedirects = {};
   final Map<String, CarRecord> _recordByKey = {};
   String _lastProcessedTranscript = '';
   String? _lastKey; // last plate recorded (target of a note said after a pause)
@@ -138,6 +139,8 @@ class CarRecordProvider extends ChangeNotifier {
     _recordIds.clear();
     _latestNote.clear();
     _recordByKey.clear();
+    _upgradedKeyRedirects.clear();
+    _currentTranscript = '';
     _recorderLoaded = false;
     await _loadRecorderName();
     await loadRecords();
@@ -304,7 +307,7 @@ class CarRecordProvider extends ChangeNotifier {
             _ingestPlate(pending, sortAuditProvider, onPlateAdded);
           } else {
             _pendingIncompletePlate = () => _ingestPlate(pending, sortAuditProvider, onPlateAdded);
-            _incompletePlateTimer = Timer(const Duration(milliseconds: 550), () {
+            _incompletePlateTimer = Timer(const Duration(milliseconds: 350), () {
               final flush = _pendingIncompletePlate;
               _pendingIncompletePlate = null;
               if (!_isListening || flush == null) return;
@@ -402,8 +405,9 @@ class CarRecordProvider extends ChangeNotifier {
         _lastMatchResult = auditLog;
         _applySlotsFromPlate(plateData);
 
+        final existingId = prev.id ?? _recordIds.remove(prevNorm);
         final updated = CarRecord(
-          id: prev.id,
+          id: existingId,
           plateNumber: plateData.fullPlate,
           carType: plateData.detectedBrand != '-' ? plateData.detectedBrand : (auditLog.carType.isNotEmpty && auditLog.carType != '-' ? auditLog.carType : prev.carType),
           gpsUrl: prev.gpsUrl,
@@ -421,8 +425,18 @@ class CarRecordProvider extends ChangeNotifier {
         _recentRecords = _records.take(10).toList();
         notifyListeners();
 
-        if (prev.id != null) {
+        if (existingId != null) {
+          _recordIds[norm] = existingId;
           unawaited(_dbHelper.updateCarRecord(updated));
+        } else {
+          // Insert is still in flight; redirect its completion to update SQLite atomically
+          for (final entry in _upgradedKeyRedirects.entries.toList()) {
+            if (entry.value == prevNorm) {
+              _upgradedKeyRedirects[entry.key] = norm;
+            }
+          }
+          _upgradedKeyRedirects[prevNorm] = norm;
+          _pendingUpdates[norm] = updated;
         }
         if (auditLog.isMatched && !prev.isMatched) {
           onPlateAdded(plateData.fullPlate, auditLog.isMatched, auditLog.carType);
@@ -473,12 +487,20 @@ class CarRecordProvider extends ChangeNotifier {
     unawaited(() async {
       try {
         final newId = await _dbHelper.insertCarRecord(record);
-        _recordIds[norm] = newId;
-        final pending = _pendingUpdates.remove(norm);
+        final finalNorm = _upgradedKeyRedirects.remove(norm) ?? norm;
+        _recordIds[finalNorm] = newId;
+        final idx = _records.indexWhere(
+          (r) => ArabicVoiceNormalizer.plateKey(r.plateNumber) == finalNorm && r.id == null,
+        );
+        if (idx != -1) {
+          _records[idx] = _records[idx].copyWith(id: newId);
+          _recordByKey[finalNorm] = _records[idx];
+        }
+        final pending = _pendingUpdates.remove(finalNorm) ?? _pendingUpdates.remove(norm);
         if (pending != null) {
           await _dbHelper.updateCarRecord(pending.copyWith(id: newId));
         } else {
-          final latest = _latestNote[norm];
+          final latest = _latestNote[finalNorm];
           if (latest != null && latest != '-' && latest != record.notes) {
             await _dbHelper.updateCarRecordNotes(newId, latest);
           }
@@ -760,6 +782,8 @@ class CarRecordProvider extends ChangeNotifier {
     _recordIds.clear();
     _latestNote.clear();
     _recordByKey.clear();
+    _upgradedKeyRedirects.clear();
+    _currentTranscript = '';
     notifyListeners();
   }
 }

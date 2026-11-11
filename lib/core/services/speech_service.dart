@@ -35,7 +35,7 @@ class SpeechService {
         // Scores Google STT alternate hypotheses in <0.2ms so dropped letters
         // in noise or fast speech are recovered automatically on-device.
         final best = ArabicVoiceNormalizer.selectBestCandidate(candidates);
-        final slots = ArabicVoiceNormalizer.extractSlotsFromPlates(best.plates);
+        final slots = ArabicVoiceNormalizer.extractLiveSlots(best.normalized, best.plates);
 
         if (best.plates.isEmpty) {
           final orphan = ArabicVoiceNormalizer.extractOrphanBrandAndNote(best.normalized);

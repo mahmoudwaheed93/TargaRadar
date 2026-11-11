@@ -1008,22 +1008,39 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
                     _buildBigSlot(recordProvider.currentSlots['l1'] ?? '-'),
                   ],
                 ),
-                if (recordProvider.isListening && recordProvider.currentTranscript.isNotEmpty) ...[
+                if (recordProvider.isListening || recordProvider.currentTranscript.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                     decoration: BoxDecoration(
                       color: const Color(0xFF10141D),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFF232F46)),
+                      border: Border.all(color: AppColors.primary.withValues(alpha: 0.35)),
                     ),
-                    child: Text(
-                      recordProvider.currentTranscript,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: AppColors.primary, fontSize: 11),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.graphic_eq_rounded,
+                          size: 15,
+                          color: recordProvider.isListening ? AppColors.primary : AppColors.textMutedDark,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            recordProvider.currentTranscript.isEmpty
+                                ? 'تحدث الآن... يتم تحويل الكلام لكتابة فورية'
+                                : recordProvider.currentTranscript,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: recordProvider.currentTranscript.isEmpty ? AppColors.textMutedDark : Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
