@@ -18,6 +18,9 @@ class WebSpeechPlatformService implements SpeechPlatformService {
   void Function(String status)? _onStatusDelegate;
 
   @override
+  SpeechEngineType get activeEngine => SpeechEngineType.platformRecognizer;
+
+  @override
   bool get isListening => _wantListening;
 
   @override

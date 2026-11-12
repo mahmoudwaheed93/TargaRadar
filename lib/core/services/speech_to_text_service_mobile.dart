@@ -35,6 +35,9 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
   static const Duration _initialIdleSilence = Duration(seconds: 10);
 
   @override
+  SpeechEngineType get activeEngine => SpeechEngineType.platformRecognizer;
+
+  @override
   int get session => _session;
 
   @override
