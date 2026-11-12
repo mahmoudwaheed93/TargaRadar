@@ -511,5 +511,84 @@ void main() {
       // Wait past 5s simulated at UI level does not falsely merge unrelated 3-digit plates
       expect(ArabicVoiceNormalizer.isPlateUpgrade(padded.fullPlate, 'س ص ع 1234'), isFalse);
     });
+
+    test('Task F: 60s continuous stream of 16 back-to-back plates with zero pauses yields zero misses', () {
+      final expectedPlates = [
+        'د ب ن 2816', 'س ص ع 5555', 'ب ن ق 3253', 'ا ر ع 1234',
+        'ا ن ي 9012', 'ر م ي 4321', 'ك ل م 7788', 'ح م د 1122',
+        'ه ن ي 3344', 'ق ه و 4320', 'س ع د 8765', 'ب ه ط 2018',
+        'ع ل م 6655', 'ن و ر 4499', 'ط ي ر 1050', 'ف ه د 9900',
+      ];
+      final continuous = expectedPlates.join(' ');
+      final parsed = ArabicVoiceNormalizer.extractPlatesFromTranscript(continuous);
+      expect(parsed.length, equals(16));
+      for (int i = 0; i < expectedPlates.length; i++) {
+        expect(parsed[i].fullPlate, equals(expectedPlates[i]));
+      }
+    });
+
+    test('Task F: Fused letters (ألفبهدال، قهوه، سينصادعين) and compound spoken numbers', () {
+      final p1 = ArabicVoiceNormalizer.extractPlatesFromTranscript('ألفبهدال ١٢٣');
+      expect(p1.length, equals(1));
+      expect(ArabicVoiceNormalizer.finalizeThreeDigitPlate(p1.first).fullPlate, equals('ا ب د 1230'));
+
+      final p2 = ArabicVoiceNormalizer.extractPlatesFromTranscript('سينصادعين ٤٥٦٧');
+      expect(p2.length, equals(1));
+      expect(p2.first.fullPlate, equals('س ص ع 4567'));
+
+      final p3 = ArabicVoiceNormalizer.extractPlatesFromTranscript('قهوه ٤٣٢');
+      expect(p3.length, equals(1));
+      expect(ArabicVoiceNormalizer.finalizeThreeDigitPlate(p3.first).fullPlate, equals('ق ه و 4320'));
+
+      final p4 = ArabicVoiceNormalizer.extractPlatesFromTranscript('سين صاد عين مية أربعة وعشرين');
+      expect(p4.length, equals(1));
+      expect(ArabicVoiceNormalizer.finalizeThreeDigitPlate(p4.first).fullPlate, equals('س ص ع 1240'));
+
+      final p5 = ArabicVoiceNormalizer.extractPlatesFromTranscript('د ب ن أربعة وخمسين اتنين واحد');
+      expect(p5.length, equals(1));
+      expect(p5.first.fullPlate, equals('د ب ن 5421'));
+
+      final p6 = ArabicVoiceNormalizer.extractPlatesFromTranscript('ب ن ق ألفين وتمانتاشر');
+      expect(p6.length, equals(1));
+      expect(p6.first.fullPlate, equals('ب ن ق 2018'));
+
+      final p7 = ArabicVoiceNormalizer.extractPlatesFromTranscript('عين دال سينتلاته 512');
+      expect(p7.length, equals(1));
+      expect(p7.first.fullPlate, equals('ع د س 3512'));
+    });
+
+    test('Task F: Multi-dialect pronunciations (Cairene أف, Saidi/Gulf قيم/جاف, thaa->seen, dhal->dal)', () {
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('أف باء دال 2816').first.fullPlate, equals('ق ب د 2816'));
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('قيم جاف راء تلاته اتنين خمسه تمانيه').first.fullPlate, equals('ج ق ر 3258'));
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('ثاء ذال ظاء 1111').first.fullPlate, equals('س د ط 1111'));
+    });
+
+    test('Task F: Dataset-assisted weighted phonetic recovery for confused ح->هـ and ض->د/ص', () {
+      final sheet = ['ق ح م 2816', 'ب ض ع 5555', 'ر ط ل 9999'];
+
+      // هـ confused for ح against dataset
+      final hRescue = ArabicVoiceNormalizer.findPhoneticSheetMatchIndex(
+        'ق ه م 2816',
+        const [0],
+        (i) => sheet[i],
+      );
+      expect(hRescue, equals(0));
+
+      // د confused for ض against dataset
+      final dRescue = ArabicVoiceNormalizer.findPhoneticSheetMatchIndex(
+        'ب د ع 5555',
+        const [1],
+        (i) => sheet[i],
+      );
+      expect(dRescue, equals(1));
+
+      // ص confused for ض against dataset
+      final sRescue = ArabicVoiceNormalizer.findPhoneticSheetMatchIndex(
+        'ب ص ع 5555',
+        const [1],
+        (i) => sheet[i],
+      );
+      expect(sRescue, equals(1));
+    });
   });
 }
