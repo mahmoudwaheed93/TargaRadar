@@ -781,17 +781,18 @@ class ArabicVoiceNormalizer {
         i = colA.nextIdx + 1;
         continue;
       }
-      // Skip invalid 4-letter contiguous blocks so they cannot be sliced into 3
-      if (colA.letters.length > 3) {
-        i = colA.nextIdx;
-        continue;
-      }
-
-      // Fused letter-name fallback (e.g. "رانونيا 2816" or "رانو نيا 2816" -> "ر ن ي 2816")
-      if (_phraseLengthAt(tokens, i) == 0 && !_isDigits(tokens[i])) {
+      // Fused letter-name fallback BEFORE 4-char skip (e.g. "رانونيا 2816" or "رانو نيا 2816" -> "ر ن ي 2816")
+      if (_phraseLengthAt(tokens, i) == 0 &&
+          !_isDigits(tokens[i]) &&
+          !_nonLetterTokens.contains(tokens[i])) {
         bool matchedFused = false;
         for (int span = 1; span <= 2 && i + span < tokens.length; span++) {
-          if (span == 2 && (_phraseLengthAt(tokens, i + 1) > 0 || _isDigits(tokens[i + 1]))) break;
+          if (span == 2 &&
+              (_phraseLengthAt(tokens, i + 1) > 0 ||
+                  _isDigits(tokens[i + 1]) ||
+                  _nonLetterTokens.contains(tokens[i + 1]))) {
+            break;
+          }
           if (_isPlateDigits(tokens[i + span])) {
             final joined = tokens.sublist(i, i + span).join('');
             final fused = _splitFusedToThreeLetters(joined);
@@ -813,6 +814,12 @@ class ArabicVoiceNormalizer {
           }
         }
         if (matchedFused) continue;
+      }
+
+      // Skip invalid 4-letter contiguous blocks so they cannot be sliced into 3
+      if (colA.letters.length > 3) {
+        i = colA.nextIdx;
+        continue;
       }
 
       // Pattern C/D: Digits (3 or 4) then Letters (strictly 3)
@@ -882,16 +889,19 @@ class ArabicVoiceNormalizer {
           i = colC.nextIdx;
           continue;
         }
-        if (colC.letters.length > 3) {
-          i = colC.nextIdx;
-          continue;
-        }
-
-        // Digits-first fused letter-name fallback (e.g. "2816 رانونيا" -> "ر ن ي 2816")
-        if (i + 1 < tokens.length && _phraseLengthAt(tokens, i + 1) == 0 && !_isDigits(tokens[i + 1])) {
+        // Digits-first fused letter-name fallback BEFORE 4-char skip (e.g. "2816 رانونيا" / "2816 رانو نيا" -> "ر ن ي 2816")
+        if (i + 1 < tokens.length &&
+            _phraseLengthAt(tokens, i + 1) == 0 &&
+            !_isDigits(tokens[i + 1]) &&
+            !_nonLetterTokens.contains(tokens[i + 1])) {
           bool matchedFusedAfter = false;
           for (int span = 1; span <= 2 && i + span < tokens.length; span++) {
-            if (span == 2 && (_phraseLengthAt(tokens, i + 2) > 0 || _isDigits(tokens[i + 2]))) break;
+            if (span == 2 &&
+                (_phraseLengthAt(tokens, i + 2) > 0 ||
+                    _isDigits(tokens[i + 2]) ||
+                    _nonLetterTokens.contains(tokens[i + 2]))) {
+              break;
+            }
             final joined = tokens.sublist(i + 1, i + 1 + span).join('');
             final fused = _splitFusedToThreeLetters(joined);
             if (fused != null) {
@@ -911,6 +921,10 @@ class ArabicVoiceNormalizer {
             }
           }
           if (matchedFusedAfter) continue;
+        }
+        if (colC.letters.length > 3) {
+          i = colC.nextIdx;
+          continue;
         }
       }
 

@@ -312,6 +312,10 @@ void main() {
       expect(f3.length, equals(1));
       expect(f3.first.fullPlate, equals('ر ن ي 2816'));
 
+      final f3b = ArabicVoiceNormalizer.extractPlatesFromTranscript('2816 رانو نيا');
+      expect(f3b.length, equals(1));
+      expect(f3b.first.fullPlate, equals('ر ن ي 2816'));
+
       final f4 = ArabicVoiceNormalizer.extractPlatesFromTranscript('سينصادعين 3253');
       expect(f4.length, equals(1));
       expect(f4.first.fullPlate, equals('س ص ع 3253'));
