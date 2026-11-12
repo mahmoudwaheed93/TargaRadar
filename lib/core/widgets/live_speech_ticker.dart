@@ -144,7 +144,7 @@ class SpeechSpeedModeChip extends StatelessWidget {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    preferOnDevice ? 'أوفلاين' : 'سحابي',
+                    preferOnDevice ? 'أوفلاين سريع' : 'سحابي Cloud',
                     style: TextStyle(
                       color: preferOnDevice ? AppColors.success : AppColors.textSecondaryDark,
                       fontSize: 10,

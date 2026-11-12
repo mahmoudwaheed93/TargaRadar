@@ -16,7 +16,7 @@ class SpeechService {
       ? WebSpeechPlatformService()
       : MobileSpeechPlatformService();
 
-  final ValueNotifier<bool> preferOnDeviceNotifier = ValueNotifier<bool>(false);
+  final ValueNotifier<bool> preferOnDeviceNotifier = ValueNotifier<bool>(true);
   bool _prefLoaded = false;
 
   bool get preferOnDevice => preferOnDeviceNotifier.value;
@@ -27,7 +27,7 @@ class SpeechService {
     _prefLoaded = true;
     try {
       final prefs = await SharedPreferences.getInstance();
-      preferOnDeviceNotifier.value = prefs.getBool(_prefOnDeviceKey) ?? false;
+      preferOnDeviceNotifier.value = prefs.getBool(_prefOnDeviceKey) ?? true;
     } catch (_) {}
   }
 

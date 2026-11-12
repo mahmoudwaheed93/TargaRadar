@@ -498,5 +498,18 @@ void main() {
       );
       expect(stale.plates, isEmpty);
     });
+
+    test('Late 4th digit arriving within 5s triggers safe in-place upgrade over zero-padded 3-digit plate', () {
+      final padded = ArabicVoiceNormalizer.finalizeThreeDigitPlate(
+        ArabicVoiceNormalizer.extractPlatesFromTranscript('د ب ن 123').first,
+      );
+      expect(padded.fullPlate, equals('د ب ن 1230'));
+      final lateFourth = ArabicVoiceNormalizer.extractPlatesFromTranscript('د ب ن 1234').first;
+      expect(ArabicVoiceNormalizer.isPlateUpgrade(padded.fullPlate, lateFourth.fullPlate), isTrue);
+      // Same letters different prefix must never overwrite
+      expect(ArabicVoiceNormalizer.isPlateUpgrade(padded.fullPlate, 'د ب ن 5678'), isFalse);
+      // Wait past 5s simulated at UI level does not falsely merge unrelated 3-digit plates
+      expect(ArabicVoiceNormalizer.isPlateUpgrade(padded.fullPlate, 'س ص ع 1234'), isFalse);
+    });
   });
 }

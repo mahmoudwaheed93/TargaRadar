@@ -126,7 +126,7 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
       if (_isInitialized) {
         final locales = await _speech.locales();
         final ar = locales.where((l) => l.localeId.toLowerCase().startsWith('ar')).toList();
-        for (final pref in ['ar_eg', 'ar-eg', 'ar_sa', 'ar-sa']) {
+        for (final pref in ['ar_eg', 'ar-eg', 'ar_sa', 'ar-sa', 'ar_ae', 'ar-ae']) {
           final m = ar.where((l) => l.localeId.toLowerCase() == pref);
           if (m.isNotEmpty) {
             _localeId = m.first.localeId;

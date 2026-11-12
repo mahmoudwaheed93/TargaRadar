@@ -72,7 +72,7 @@ class InspectionProvider extends ChangeNotifier {
   Timer? _incompletePlateTimer;
   Timer? _aiTimer;
   static const Duration _aiDebounce = Duration(milliseconds: 250);
-  static const Duration _threeDigitCloseDebounce = Duration(milliseconds: 350);
+  static const Duration _threeDigitCloseDebounce = Duration(milliseconds: 160);
   VoidCallback? _pendingIncompletePlate;
   DateTime? _lastIngestedAt;
   String _lastProcessedTranscript = '';

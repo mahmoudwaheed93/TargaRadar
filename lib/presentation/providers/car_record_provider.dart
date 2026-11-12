@@ -611,7 +611,7 @@ class CarRecordProvider extends ChangeNotifier {
   }
 
   Timer? _incompletePlateTimer;
-  static const Duration _threeDigitCloseDebounce = Duration(milliseconds: 350);
+  static const Duration _threeDigitCloseDebounce = Duration(milliseconds: 160);
   VoidCallback? _pendingIncompletePlate;
 
   void _flushPendingIncompletePlate() {
