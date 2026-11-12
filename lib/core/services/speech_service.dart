@@ -4,6 +4,7 @@ import 'speech_to_text_service_interface.dart';
 import 'speech_to_text_service_mobile.dart';
 import 'speech_to_text_service_web.dart';
 import 'arabic_voice_normalizer.dart';
+import 'voice_telemetry_logger.dart';
 import '../../data/models/excel_vehicle_model.dart';
 
 class SpeechService {
@@ -63,11 +64,24 @@ class SpeechService {
       preferOnDevice: preferOnDeviceNotifier.value,
       onFallbackToCloud: () => setPreferOnDevice(false),
       onResult: (candidates, isFinal) {
+        final sw = kDebugMode ? (Stopwatch()..start()) : null;
         // High-performance single-pass pipeline with N-best alternate recovery:
         // Scores Google STT alternate hypotheses in <0.2ms so dropped letters
         // in noise or fast speech are recovered automatically on-device.
         final best = ArabicVoiceNormalizer.selectBestCandidate(candidates);
         final slots = ArabicVoiceNormalizer.extractLiveSlots(best.normalized, best.plates);
+        if (sw != null) {
+          sw.stop();
+          VoiceTelemetryLogger.instance.logPartialNormalized(
+            session: _platformService.session,
+            candidates: candidates,
+            confidences: const [],
+            isFinal: isFinal,
+            normMatchUs: sw.elapsedMicroseconds,
+            extractedPlates: best.plates.map((p) => p.fullPlate).toList(),
+            activeTailKey: ArabicVoiceNormalizer.extractUnparsedTail(best.normalized),
+          );
+        }
 
         if (best.plates.isEmpty) {
           final orphan = ArabicVoiceNormalizer.extractOrphanBrandAndNote(best.normalized);

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'speech_to_text_service_interface.dart';
+import 'voice_telemetry_logger.dart';
 
 class MobileSpeechPlatformService implements SpeechPlatformService {
   final stt.SpeechToText _speech = stt.SpeechToText();
@@ -56,6 +57,12 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
         onError: (val) {
           final msg = val.errorMsg;
           debugPrint('Speech error: $msg permanent=${val.permanent}');
+          VoiceTelemetryLogger.instance.logSessionTermination(
+            session: _session,
+            kind: 'error',
+            detail: msg,
+            permanent: val.permanent,
+          );
           if (!_wantListening) return;
 
           // Only fall back from offline mode if the offline model itself is missing/unsupported;
@@ -83,6 +90,13 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
         },
         onStatus: (val) {
           debugPrint('Speech status: $val');
+          if (val == 'done' || val == 'notListening') {
+            VoiceTelemetryLogger.instance.logSessionTermination(
+              session: _session,
+              kind: 'status',
+              detail: val,
+            );
+          }
           if (_wantListening && (val == 'done' || val == 'notListening')) {
             _restartSoon(delayMs: 40);
           }
@@ -146,6 +160,11 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
     _isStarting = true;
     final listenSession = ++_session;
     _lastObservedWords = '';
+    VoiceTelemetryLogger.instance.logSessionStart(
+      listenSession,
+      onDevice: _useOnDevice,
+      localeId: _localeId,
+    );
     bool needFallback = false;
     try {
       await _speech.listen(

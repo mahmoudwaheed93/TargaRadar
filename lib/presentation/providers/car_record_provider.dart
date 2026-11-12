@@ -7,6 +7,7 @@ import '../../core/services/excel_export_service.dart';
 import '../../core/services/location_service.dart';
 import '../../core/services/sound_alert_service.dart';
 import '../../core/services/speech_service.dart';
+import '../../core/services/voice_telemetry_logger.dart';
 import '../../data/datasources/database_helper.dart';
 import '../../data/models/car_record_model.dart';
 import '../../data/models/excel_vehicle_model.dart';
@@ -545,6 +546,7 @@ class CarRecordProvider extends ChangeNotifier {
     _lastReadPlate = effectivePlate;
     _lastReadIsWanted = auditLog.isMatched;
     _lastMatchResult = auditLog;
+    VoiceTelemetryLogger.instance.logPlateCommitted(effectivePlate);
 
     _applySlotsFromPlate(plateData);
 

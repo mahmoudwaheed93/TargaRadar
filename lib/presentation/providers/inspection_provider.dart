@@ -7,6 +7,7 @@ import '../../core/services/excel_table_service.dart';
 import '../../core/services/location_service.dart';
 import '../../core/services/sound_alert_service.dart';
 import '../../core/services/speech_service.dart';
+import '../../core/services/voice_telemetry_logger.dart';
 import '../../core/utils/date_formatter.dart';
 import '../../data/models/excel_vehicle_model.dart';
 
@@ -279,6 +280,7 @@ class InspectionProvider extends ChangeNotifier {
     _seen.add(key);
     _lastKey = key;
     _lastIngestedAt = DateTime.now();
+    VoiceTelemetryLogger.instance.logPlateCommitted(resolvedPlate, source: 'inspection');
 
     final row = _rowFor(key);
     final now = DateTime.now();
