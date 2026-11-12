@@ -286,7 +286,7 @@ class CarRecordProvider extends ChangeNotifier {
         }
         if (rawTranscript == _lastProcessedTranscript && !isFinal) return;
         _lastProcessedTranscript = isFinal ? '' : rawTranscript;
-        _currentTranscript = rawTranscript;
+        _currentTranscript = ArabicVoiceNormalizer.extractActiveTickerText(normalized);
         if (slots.isNotEmpty) {
           _currentSlots = slots;
         }

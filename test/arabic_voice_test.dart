@@ -250,6 +250,27 @@ void main() {
       expect(res[0].fullPlate, equals('د ب ن 2816'));
       expect(res[1].fullPlate, equals('ب ن ق 3253'));
     });
+
+    test('extractActiveTickerText clears completed plates and keeps only live upcoming speech', () {
+      expect(
+        ArabicVoiceNormalizer.extractActiveTickerText(
+          ArabicVoiceNormalizer.normalizeArabicSpoken('د ب ن 2816'),
+        ),
+        equals(''),
+      );
+      expect(
+        ArabicVoiceNormalizer.extractActiveTickerText(
+          ArabicVoiceNormalizer.normalizeArabicSpoken('د ب ن 2816 د س'),
+        ),
+        equals('د س'),
+      );
+      expect(
+        ArabicVoiceNormalizer.extractActiveTickerText(
+          ArabicVoiceNormalizer.normalizeArabicSpoken('د ب ن 2816 د س ص 320'),
+        ),
+        equals('د س ص 320'),
+      );
+    });
   });
 }
 

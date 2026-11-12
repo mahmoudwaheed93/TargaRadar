@@ -835,6 +835,23 @@ class ArabicVoiceNormalizer {
     return tail.join(' ').trim();
   }
 
+  /// Returns ONLY the live speech not yet committed as a finished 4-digit plate
+  /// so the on-screen ticker clears completed plates automatically for the next one.
+  static String extractActiveTickerText(String normalized) {
+    if (normalized.isEmpty) return '';
+    final tokens = normalized.split(' ').where((t) => t.isNotEmpty).toList();
+    if (tokens.isEmpty) return '';
+    final matches = _findPlateMatches(tokens);
+    if (matches.isEmpty) return normalized;
+    final last = matches.last;
+    // If the latest matched plate is still waiting for trailing digits (<4)
+    // and has nothing after it, keep it visible until completed.
+    if (last.digits.length < 4 && last.endIndex == tokens.length) {
+      return tokens.sublist(last.startIndex).join(' ').trim();
+    }
+    return tokens.sublist(last.endIndex).join(' ').trim();
+  }
+
   /// Validates whether [rawTranscript] genuinely contains an explicit note
   /// trigger or verified note keyword (guards AI output against stray-letter notes).
   static bool hasValidNoteTriggerOrKeyword(String rawTranscript) {

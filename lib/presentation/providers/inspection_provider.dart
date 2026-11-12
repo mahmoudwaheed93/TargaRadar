@@ -304,7 +304,7 @@ class InspectionProvider extends ChangeNotifier {
         }
         if (raw == _lastProcessedTranscript && !isFinal) return;
         _lastProcessedTranscript = isFinal ? '' : raw;
-        _currentTranscript = raw;
+        _currentTranscript = ArabicVoiceNormalizer.extractActiveTickerText(normalized);
         if (slots.isNotEmpty) {
           _slots = slots;
         }
