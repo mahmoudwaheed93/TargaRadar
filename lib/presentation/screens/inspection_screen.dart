@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/services/sound_alert_service.dart';
 import '../../core/utils/external_actions.dart';
+import '../../core/widgets/live_speech_ticker.dart' show SpeechSpeedModeChip;
 import '../providers/car_record_provider.dart';
 import '../providers/inspection_provider.dart';
 

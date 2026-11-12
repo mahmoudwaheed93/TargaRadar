@@ -4,6 +4,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/services/arabic_voice_normalizer.dart';
 import '../../core/services/sound_alert_service.dart';
 import '../../core/utils/external_actions.dart';
+import '../../core/widgets/live_speech_ticker.dart' show SpeechSpeedModeChip;
 import '../../data/models/car_record_model.dart';
 import '../../data/models/excel_vehicle_model.dart';
 import '../providers/auth_provider.dart';
