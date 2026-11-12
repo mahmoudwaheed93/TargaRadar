@@ -61,7 +61,12 @@ class _InspectionScreenState extends State<InspectionScreen> {
     // Only one microphone session at a time.
     final records = context.read<CarRecordProvider>();
     if (records.isListening) await records.stopVoiceListening();
-    await insp.startListening(onMatch: (entry) {
+    await insp.startListening(
+      onError: (msg, canOpenSettings) {
+        if (!mounted) return;
+        ExternalActions.showSpeechErrorSnackBar(context, msg, canOpenSettings);
+      },
+      onMatch: (entry) {
       SoundAlertService.instance.playMatchAlarm(durationSeconds: 3);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

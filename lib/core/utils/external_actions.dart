@@ -1,5 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -90,5 +92,31 @@ class ExternalActions {
     } catch (e) {
       debugPrint('[ExternalActions] Share failed: $e');
     }
+  }
+
+  /// Surfaces an actionable Arabic voice/permission error banner with optional App Settings shortcut.
+  static void showSpeechErrorSnackBar(
+    BuildContext context,
+    String message,
+    bool canOpenSettings,
+  ) {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: const Color(0xFFDC2626),
+        duration: const Duration(seconds: 5),
+        action: canOpenSettings
+            ? SnackBarAction(
+                label: 'فتح الإعدادات',
+                textColor: Colors.white,
+                onPressed: () {
+                  Geolocator.openAppSettings().catchError((_) => false);
+                },
+              )
+            : null,
+      ),
+    );
   }
 }

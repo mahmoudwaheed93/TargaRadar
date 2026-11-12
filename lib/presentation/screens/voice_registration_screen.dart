@@ -538,6 +538,10 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
                           if (insp.isListening) await insp.stopListening();
                           await recordProvider.toggleVoiceListening(
                             sortAuditProvider: auditProvider,
+                            onError: (msg, canOpenSettings) {
+                              if (!mounted) return;
+                              ExternalActions.showSpeechErrorSnackBar(context, msg, canOpenSettings);
+                            },
                             onPlateAdded: (plate, isMatched, model) {
                               if (isMatched) {
                                 SoundAlertService.instance.playMatchAlarm(durationSeconds: 3);

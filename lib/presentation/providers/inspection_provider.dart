@@ -310,7 +310,10 @@ class InspectionProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> startListening({required void Function(InspectionEntry entry) onMatch}) async {
+  Future<void> startListening({
+    required void Function(InspectionEntry entry) onMatch,
+    void Function(String message, bool canOpenSettings)? onError,
+  }) async {
     unawaited(_refreshLocation());
     unawaited(SoundAlertService.instance.warmUp());
     if (_isListening) return;
@@ -327,6 +330,7 @@ class InspectionProvider extends ChangeNotifier {
     notifyListeners();
 
     await _speech.startListening(
+      onError: onError,
       // Inspection mode strictly tracks plates only (never voice notes)
       onResult: (raw, plates, slots, normalized, isFinal) {
         if (raw.length < _lastProcessedTranscript.length) {

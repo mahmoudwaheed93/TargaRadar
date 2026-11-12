@@ -73,7 +73,6 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
       detail: msg,
       permanent: permanent,
     );
-    _onErrorDelegate?.call(msg, permanent);
     if (!_wantListening) return;
 
     // Only fall back from offline mode if the offline model itself is missing/unsupported;
@@ -86,16 +85,23 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
       return;
     }
 
-    if (_isFatalPermissionError(msg)) {
+    final lower = msg.toLowerCase();
+    final isTimeoutNoise = lower.contains('speech_timeout') || lower.contains('no_match');
+    final isCloudLanguageUnavailable = !_useOnDevice && _isMissingOfflineModelError(msg);
+    final isFatal = _isFatalPermissionError(msg) ||
+        isCloudLanguageUnavailable ||
+        (permanent && !isTimeoutNoise);
+
+    if (isFatal) {
       _wantListening = false;
       _watchdogTimer?.cancel();
+      _restartTimer?.cancel();
       unawaited(_setBeepSuppressed(false));
+      _onErrorDelegate?.call(msg, true);
       _onDone?.call();
       return;
     }
 
-    final lower = msg.toLowerCase();
-    final isTimeoutNoise = lower.contains('speech_timeout') || lower.contains('no_match');
     _scheduleRestart(isError: !isTimeoutNoise);
   }
 
@@ -285,6 +291,7 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
     _onStatusDelegate = onStatus;
     final available = await initSpeech();
     if (!available) {
+      _onErrorDelegate?.call('speech_init_failed', true);
       onDone();
       return;
     }

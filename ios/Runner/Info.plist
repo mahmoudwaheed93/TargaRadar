@@ -24,6 +24,10 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>يحتاج التطبيق إلى إذن الميكروفون لتسجيل وفحص لوحات السيارات بالصوت</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>يحتاج التطبيق إلى خدمة التعرف على الصوت لتحويل نطق اللوحات والأرقام العربية فوراً</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

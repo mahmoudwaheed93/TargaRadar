@@ -62,6 +62,7 @@ class SpeechService {
     required VoidCallback onDone,
     void Function(String? note, int session)? onOrphanNote,
     void Function(OrphanVoiceData data, int session)? onOrphanData,
+    void Function(String message, bool canOpenSettings)? onError,
   }) async {
     await _ensurePrefLoaded();
     _lastRawPrimary = '';
@@ -70,6 +71,23 @@ class SpeechService {
     await _platformService.startListening(
       preferOnDevice: preferOnDeviceNotifier.value,
       onFallbackToCloud: () => setPreferOnDevice(false),
+      onError: (rawErr, permanent) {
+        if (!permanent || onError == null) return;
+        final lower = rawErr.toLowerCase();
+        if (lower.contains('permission') || lower.contains('init_failed') || lower.contains('not-allowed')) {
+          onError(
+            'يرجى تفعيل إذن الميكروفون أو خدمة التعرف الصوتي من إعدادات الهاتف',
+            true,
+          );
+        } else if (lower.contains('language') || lower.contains('not_available') || lower.contains('not_supported')) {
+          onError(
+            'خدمة اللغة العربية غير متاحة حالياً للتعرف الصوتي، تأكد من تحديث خدمات Google أو الاتصال بالإنترنت',
+            true,
+          );
+        } else {
+          onError('توقف التعرف الصوتي مؤقتاً ($rawErr)', false);
+        }
+      },
       onResult: (candidates, isFinal) {
         if (candidates.isEmpty) return;
         final currentSession = _platformService.session;

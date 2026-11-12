@@ -274,6 +274,7 @@ class CarRecordProvider extends ChangeNotifier {
   Future<void> toggleVoiceListening({
     required ExcelSortAuditProvider sortAuditProvider,
     required Function(String plate, bool isMatched, String carModel) onPlateAdded,
+    void Function(String message, bool canOpenSettings)? onError,
   }) async {
     if (_isListening) {
       await stopVoiceListening();
@@ -281,6 +282,7 @@ class CarRecordProvider extends ChangeNotifier {
       await startVoiceListening(
         sortAuditProvider: sortAuditProvider,
         onPlateAdded: onPlateAdded,
+        onError: onError,
       );
     }
   }
@@ -288,6 +290,7 @@ class CarRecordProvider extends ChangeNotifier {
   Future<void> startVoiceListening({
     required ExcelSortAuditProvider sortAuditProvider,
     required Function(String plate, bool isMatched, String carModel) onPlateAdded,
+    void Function(String message, bool canOpenSettings)? onError,
   }) async {
     if (_isListening) return;
     _isListening = true;
@@ -304,6 +307,7 @@ class CarRecordProvider extends ChangeNotifier {
     await _speechService.startListening(
       onOrphanNote: _handleOrphanNote,
       onOrphanData: _handleOrphanData,
+      onError: onError,
       onResult: (rawTranscript, extractedPlates, slots, normalized, isFinal) {
         if (rawTranscript.length < _lastProcessedTranscript.length) {
           _lastProcessedTranscript = '';
