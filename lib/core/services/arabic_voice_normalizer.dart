@@ -98,8 +98,7 @@ class ArabicVoiceNormalizer {
     'تمام', 'حاضر', 'ماشي', 'اوكي', 'شكرا', 'يلا', 'بص', 'شوف',
     'ملاكي', 'اجره', 'نقل', 'بيك', 'يا', 'يه', 'ها', 'نا', 'تا', 'تي', 'سا',
     'عادي', 'عشان', 'بتاع', 'بتوع', 'معايا', 'ياخد', 'هات', 'خلي',
-    'سريع', 'مقفول', 'مفتوح', 'واقف', 'ماشي', 'واقفه', 'ماشيه',
-    'عربيه', 'عربية', 'لوحه', 'لوحة', 'نمره', 'نمرة',
+    'سريع', 'مقفول', 'مفتوح', 'واقف',
   };
 
   static String _normWord(String w) => w
@@ -683,6 +682,8 @@ class ArabicVoiceNormalizer {
       fullPlate: '$mLetters $mDigits',
       letters: mLetters,
       digits: mDigits,
+      detectedBrand: '-',
+      detectedNote: '-',
       isComplete: true,
     );
   }
