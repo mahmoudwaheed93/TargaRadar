@@ -37,25 +37,27 @@ jobs:
       - name: Build APK (Release)
         run: |
           flutter build apk --release
-          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/AIMS-Mobile-v1.1.0.apk
+          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/AIMS-Mobile-v1.1.1.apk
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
         with:
-          tag_name: v1.1.0
-          name: "AIMS-Mobile v1.1.0 (Always-On Mic Watchdog + Never Auto-Stops)"
+          tag_name: v1.1.1
+          name: "AIMS-Mobile v1.1.1 (Full Engineering Overhaul: 3-Letter Strict + 3-Digit Zero-Pad + 25s Auto-Stop)"
           draft: false
           prerelease: false
           make_latest: true
           body: |
-            ## 🚗 AIMS-Mobile / TargaRadar APK Release v1.1.0
-            - Fixed Android STT auto-stopping on speech_timeout / no_match / busy errors; mic now stays continuously active with a 2s watchdog until Stop is pressed.
-            - Refreshes "آخر قراءة مكتملة" even when re-speaking an already recorded plate after another plate or session restart.
-            - Includes continuous LiveSpeechTicker, Selector UI isolation, optional On-Device STT speed mode, and 0ms plate commits.
+            ## 🚗 AIMS-Mobile / TargaRadar APK Release v1.1.1
+            - Strict 3-letter-only plate enforcement (rejects 2-letter and 4-letter captures) + auto zero-padding (`123` -> `1230`) on 3-digit plates.
+            - 25-second continuous silence auto-stop + fixed Offline STT persistence (no downgrade on silence timeout) + `pauseFor: 3s` anti-hallucination reset with zero mid-speech lag.
+            - Colloquial Egyptian word & conjunction protection + `Alf=1000` fix + full `جيب/اوبل/اودي` brands + Hugging Face AI runtime fallback.
+            - Fixed Android 11-15 Maps links (`AndroidManifest <queries>`) + Scoped Storage safe Excel export fallback + native Share button.
+            - Real GPS fallback safety (no fake Riyadh coordinates), confirmation dialogs on Reset, fixed DB concurrency/cache/AuthGate/Firestore logout bugs, and Inspection plates-only enforcement.
           files: |
             build/app/outputs/flutter-apk/app-release.apk
-            build/app/outputs/flutter-apk/AIMS-Mobile-v1.1.0.apk
+            build/app/outputs/flutter-apk/AIMS-Mobile-v1.1.1.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

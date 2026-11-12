@@ -23,6 +23,7 @@ class UserManagementProvider extends ChangeNotifier {
   final UserRepository _userRepository;
 
   StreamSubscription<List<UserModel>>? _usersSub;
+  int _listenerCount = 0;
   List<UserModel> _users = const [];
   bool _isLoadingUsers = false;
   String? _usersError;
@@ -58,6 +59,7 @@ class UserManagementProvider extends ChangeNotifier {
   /// notifying (the caller is mid-build and will read the fresh state on its
   /// first frame); subsequent stream events notify normally.
   void startUsersStream() {
+    _listenerCount++;
     if (_usersSub != null) return;
     _isLoadingUsers = true;
     _usersError = null;
@@ -76,14 +78,18 @@ class UserManagementProvider extends ChangeNotifier {
     );
   }
 
-  /// Cancels the Firestore listener. Called from the screen's `dispose`.
-  /// Does not notify: the observing widget is being torn down.
+  /// Decrements active observer count; cancels stream & resets search/filter when 0 remain.
   void stopUsersStream() {
+    _listenerCount--;
+    if (_listenerCount > 0) return;
+    _listenerCount = 0;
     _usersSub?.cancel();
     _usersSub = null;
     _isLoadingUsers = false;
     _users = const [];
     _usersError = null;
+    _searchQuery = '';
+    _filter = UserFilter.all;
   }
 
   // ---- Search & filter ----
@@ -141,6 +147,7 @@ class UserManagementProvider extends ChangeNotifier {
     DateTime? specificDate,
     String role = 'user',
   }) async {
+    if (_isCreating) return false;
     _isCreating = true;
     _createError = null;
     notifyListeners();
@@ -206,6 +213,7 @@ class UserManagementProvider extends ChangeNotifier {
     int days = 30,
     DateTime? specificDate,
   }) async {
+    if (_isRenewing) return false;
     _isRenewing = true;
     _renewError = null;
     notifyListeners();

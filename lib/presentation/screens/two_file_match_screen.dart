@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/services/excel_table_service.dart';
+import '../../core/utils/external_actions.dart';
 
 /// Screen for matching a BIG data sheet ("داتا") with an "الاحاله" (which can be
 /// an uploaded sheet or directly typed/pasted plate numbers).
@@ -36,14 +36,7 @@ class _TwoFileMatchScreenState extends State<TwoFileMatchScreen> {
   }
 
   Future<void> _openMapUrl(String url) async {
-    try {
-      final uri = Uri.parse(url.trim());
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-    } catch (e) {
-      debugPrint('Error launching map url: $e');
-    }
+    await ExternalActions.openUrl(url);
   }
 
   @override
@@ -126,14 +119,38 @@ class _TwoFileMatchScreenState extends State<TwoFileMatchScreen> {
   Future<void> _export() async {
     final r = _result;
     if (r == null || r.matchedRows.isEmpty) return;
-    setState(() => _busy = true);
-    final path = await _service.exportMatchResult(r);
-    if (!mounted) return;
     setState(() {
-      _busy = false;
-      _exportedPath = path;
-      if (path == null) _error = 'فشل حفظ ملف الإكسيل';
+      _busy = true;
+      _error = null;
     });
+    try {
+      final path = await _service.exportMatchResult(r);
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _exportedPath = path;
+        if (path == null) _error = 'فشل حفظ ملف الإكسيل، تحقق من أذونات التخزين';
+      });
+      if (path != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('تم تصدير النتائج إلى:\n$path'),
+            backgroundColor: AppColors.success,
+            action: SnackBarAction(
+              label: 'مشاركة',
+              textColor: Colors.black,
+              onPressed: () => ExternalActions.shareFile(path, text: 'نتائج المطابقة - صقر المملكة'),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = 'تعذر حفظ ملف الإكسيل: $e';
+      });
+    }
   }
 
   void _showPlateDetailsModal(List<String> row, List<String> headers, int plateCol) {
@@ -184,67 +201,67 @@ class _TwoFileMatchScreenState extends State<TwoFileMatchScreen> {
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: const Color(0xFF232F46)),
                       ),
-                      child: ListView.separated(
-                        shrinkWrap: true,
-                        itemCount: row.length,
-                        separatorBuilder: (_, _) => const Divider(color: Color(0xFF1E293B), height: 1),
-                        itemBuilder: (context, i) {
-                          final h = i < headers.length && headers[i].isNotEmpty ? headers[i] : 'حقل ${i + 1}';
-                          final val = row[i];
-                          if (val.isEmpty) return const SizedBox.shrink();
-                          final isLoc = _isLocationUrl(val) ||
-                              h.contains('موقع') ||
-                              h.contains('خريطة') ||
-                              h.contains('خرائط') ||
-                              h.toLowerCase().contains('gps');
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                SizedBox(
-                                  width: 120,
-                                  child: Text(h, style: const TextStyle(color: AppColors.textMutedDark, fontSize: 12)),
-                                ),
-                                Expanded(
-                                  child: isLoc
-                                      ? InkWell(
-                                          onTap: () {
-                                            if (_isLocationUrl(val)) {
-                                              _openMapUrl(val);
-                                            } else {
-                                              _openMapUrl('https://maps.google.com/?q=${Uri.encodeComponent(val)}');
-                                            }
-                                          },
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              const Icon(Icons.location_on, color: AppColors.primary, size: 16),
-                                              const SizedBox(width: 4),
-                                              Flexible(
-                                                child: Text(
-                                                  val.startsWith('http') ? 'فتح الموقع في الخريطة ↗' : val,
-                                                  style: const TextStyle(
-                                                    color: AppColors.primary,
-                                                    fontSize: 13,
-                                                    fontWeight: FontWeight.bold,
-                                                    decoration: TextDecoration.underline,
+                      child: Builder(builder: (context) {
+                        final visibleIndices = <int>[
+                          for (int i = 0; i < row.length; i++)
+                            if (row[i].isNotEmpty) i,
+                        ];
+                        return ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: visibleIndices.length,
+                          separatorBuilder: (_, __) => const Divider(color: Color(0xFF1E293B), height: 1),
+                          itemBuilder: (context, pos) {
+                            final i = visibleIndices[pos];
+                            final h = i < headers.length && headers[i].isNotEmpty ? headers[i] : 'حقل ${i + 1}';
+                            final val = row[i];
+                            final isLoc = _isLocationUrl(val) ||
+                                h.contains('موقع') ||
+                                h.contains('خريطة') ||
+                                h.contains('خرائط') ||
+                                h.toLowerCase().contains('gps');
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  SizedBox(
+                                    width: 120,
+                                    child: Text(h, style: const TextStyle(color: AppColors.textMutedDark, fontSize: 12)),
+                                  ),
+                                  Expanded(
+                                    child: isLoc
+                                        ? InkWell(
+                                            onTap: () => ExternalActions.openMapLocation(val),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(Icons.location_on, color: AppColors.primary, size: 16),
+                                                const SizedBox(width: 4),
+                                                Flexible(
+                                                  child: Text(
+                                                    val.startsWith('http') ? 'فتح الموقع في الخريطة ↗' : val,
+                                                    style: const TextStyle(
+                                                      color: AppColors.primary,
+                                                      fontSize: 13,
+                                                      fontWeight: FontWeight.bold,
+                                                      decoration: TextDecoration.underline,
+                                                    ),
                                                   ),
                                                 ),
-                                              ),
-                                            ],
+                                              ],
+                                            ),
+                                          )
+                                        : Text(
+                                            val,
+                                            style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
                                           ),
-                                        )
-                                      : Text(
-                                          val,
-                                          style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
-                                        ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        );
+                      }),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -475,10 +492,28 @@ class _TwoFileMatchScreenState extends State<TwoFileMatchScreen> {
                       ),
                       if (_exportedPath != null) ...[
                         const SizedBox(height: 10),
-                        Text(
-                          'تم الحفظ في مجلد Download:\n$_exportedPath',
-                          style: const TextStyle(color: AppColors.success, fontSize: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'تم الحفظ في:\n$_exportedPath',
+                                style: const TextStyle(color: AppColors.success, fontSize: 12),
+                              ),
+                            ),
+                            TextButton.icon(
+                              onPressed: () => ExternalActions.shareFile(
+                                _exportedPath!,
+                                text: 'نتائج المطابقة - صقر المملكة',
+                              ),
+                              icon: const Icon(Icons.share_rounded, size: 16, color: AppColors.primary),
+                              label: const Text('مشاركة', style: TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.bold)),
+                            ),
+                          ],
                         ),
+                      ],
+                      if (_error != null) ...[
+                        const SizedBox(height: 8),
+                        Text(_error!, style: const TextStyle(color: AppColors.error, fontSize: 12)),
                       ],
                     ],
                   ),
@@ -513,17 +548,17 @@ class _TwoFileMatchScreenState extends State<TwoFileMatchScreen> {
                       }
                     }
 
-                    return Container(
-                      constraints: const BoxConstraints(maxHeight: 380),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF141E30),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: const Color(0xFF24334C)),
-                      ),
-                      child: ListView.separated(
-                        shrinkWrap: true,
-                        itemCount: r.matchedRows.length,
-                        separatorBuilder: (_, _) => const Divider(color: Color(0xFF1E293B), height: 1),
+                    return SizedBox(
+                      height: 360,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF141E30),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFF24334C)),
+                        ),
+                        child: ListView.separated(
+                          itemCount: r.matchedRows.length,
+                          separatorBuilder: (_, __) => const Divider(color: Color(0xFF1E293B), height: 1),
                         itemBuilder: (context, i) {
                           final row = r.matchedRows[i];
                           final plateVal = plateCol < row.length ? row[plateCol] : 'صف ${i + 1}';
@@ -558,7 +593,8 @@ class _TwoFileMatchScreenState extends State<TwoFileMatchScreen> {
                           );
                         },
                       ),
-                    );
+                    ),
+                  );
                   }),
                 ],
               ],

@@ -253,7 +253,10 @@ class _UserCard extends StatelessWidget {
     if (user.isAdmin) return 'اشتراك غير محدود';
     final d = user.endDate;
     if (d == null) return 'تاريخ الانتهاء غير محدد';
-    return 'ينتهي في ${d.year}/${d.month}/${d.day}';
+    final prefix = user.isSubscriptionValid ? 'ينتهي في' : 'انتهى في';
+    final m = d.month.toString().padLeft(2, '0');
+    final day = d.day.toString().padLeft(2, '0');
+    return '$prefix ${d.year}/$m/$day';
   }
 
   Future<void> _onTap(BuildContext context) async {

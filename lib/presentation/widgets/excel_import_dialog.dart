@@ -4,7 +4,7 @@ import '../../core/services/excel_table_service.dart';
 import '../providers/excel_sort_audit_provider.dart';
 
 /// Lets the user browse the phone for an Excel (.xlsx) file and loads it as the
-/// live-matching sheet. Replaces the old "type the file path" box.
+/// live-matching sheet cleanly without allowing dismissal mid-import.
 Future<void> showExcelImportDialog(
   BuildContext context,
   ExcelSortAuditProvider auditProvider, {
@@ -12,6 +12,7 @@ Future<void> showExcelImportDialog(
 }) {
   return showDialog(
     context: context,
+    barrierDismissible: false,
     builder: (ctx) => _ExcelImportDialog(
       title: title,
       auditProvider: auditProvider,
@@ -50,16 +51,16 @@ class _ExcelImportDialogState extends State<_ExcelImportDialog> {
         return;
       }
 
-      // The worker isolate reads the file from disk and picks the data sheet
-      // (works for heavy files and workbooks with several sheets).
       final table = await ExcelTableService.instance.parse(picked);
       final ok = await widget.auditProvider.importTable(table, picked.name);
       if (!mounted) return;
       if (ok) {
         final count = widget.auditProvider.sheetItems.length;
-        final messenger = ScaffoldMessenger.of(widget.parentContext);
+        final messenger = widget.parentContext.mounted
+            ? ScaffoldMessenger.maybeOf(widget.parentContext)
+            : null;
         Navigator.pop(context);
-        messenger.showSnackBar(
+        messenger?.showSnackBar(
           SnackBar(
             content: Text('تم استيراد $count سيارة من "${picked.name}"'),
             backgroundColor: AppColors.success,
@@ -83,68 +84,70 @@ class _ExcelImportDialogState extends State<_ExcelImportDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: AppColors.cardDark,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: Row(
-        children: [
-          const Icon(Icons.table_chart_rounded, color: AppColors.primary),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              widget.title,
-              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+    return PopScope(
+      canPop: !_busy,
+      child: AlertDialog(
+        backgroundColor: AppColors.cardDark,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.table_chart_rounded, color: AppColors.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                widget.title,
+                style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+              ),
             ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'اختار ملف الإكسيل (.xlsx) من الموبايل عشان يتفعّل المطابقة الفورية أثناء التسجيل.',
+                style: TextStyle(color: AppColors.textSecondaryDark, fontSize: 13),
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _busy ? null : _pickAndImport,
+                  icon: _busy
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                        )
+                      : const Icon(Icons.folder_open_rounded, size: 18),
+                  label: Text(
+                    _busy ? 'جاري قراءة الملف...' : 'اختيار ملف من الموبايل',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(_error!, style: const TextStyle(color: AppColors.error, fontSize: 12)),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: _busy ? null : () => Navigator.pop(context),
+            child: const Text('إلغاء', style: TextStyle(color: AppColors.textSecondaryDark)),
           ),
         ],
       ),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'اختار ملف الإكسيل (.xlsx) من الموبايل عشان يتفعّل المطابقة الفورية أثناء التسجيل.',
-              style: TextStyle(color: AppColors.textSecondaryDark, fontSize: 13),
-            ),
-            const SizedBox(height: 14),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _busy ? null : _pickAndImport,
-                icon: _busy
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
-                      )
-                    : const Icon(Icons.folder_open_rounded, size: 18),
-                label: Text(
-                  _busy ? 'جاري قراءة الملف...' : 'اختيار ملف من الموبايل',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 10),
-              Text(_error!, style: const TextStyle(color: AppColors.error, fontSize: 12)),
-            ],
-
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _busy ? null : () => Navigator.pop(context),
-          child: const Text('إلغاء', style: TextStyle(color: AppColors.textSecondaryDark)),
-        ),
-      ],
     );
   }
 }

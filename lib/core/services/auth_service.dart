@@ -34,8 +34,14 @@ class AuthService {
   User? get currentUser => _auth.currentUser;
 
   /// The Firestore `users/{docId}` id of the signed-in mirror account, or
-  /// `null` when signed out. This is the key for user-scoped data.
-  String? get currentUserDocId => docIdFromEmail(_auth.currentUser?.email);
+  /// `null` when signed out. Prefers exact case-sensitive [User.displayName].
+  String? get currentUserDocId {
+    final user = _auth.currentUser;
+    if (user == null) return null;
+    final exact = user.displayName?.trim();
+    if (exact != null && exact.isNotEmpty) return exact;
+    return docIdFromEmail(user.email);
+  }
 
   /// Builds the mirror-account email for a Firestore user doc id.
   static String bridgeEmail(String userDocId) =>
@@ -72,7 +78,14 @@ class AuthService {
         email: email,
         password: password,
       );
-      if (cred.user != null) return cred.user!;
+      if (cred.user != null) {
+        if (cred.user!.displayName != userDocId) {
+          try {
+            await cred.user!.updateDisplayName(userDocId);
+          } catch (_) {}
+        }
+        return cred.user!;
+      }
     } on FirebaseAuthException catch (e) {
       if (!_isCredentialError(e)) rethrow;
       debugPrint('[AuthService] sign-in miss (${e.code}); ensuring account');

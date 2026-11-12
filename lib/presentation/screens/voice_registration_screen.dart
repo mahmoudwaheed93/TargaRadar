@@ -1,11 +1,11 @@
-import 'package:url_launcher/url_launcher.dart';
-import '../../core/services/sound_alert_service.dart';
-import '../../core/widgets/live_speech_ticker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/services/ai_plate_refiner.dart';
 import '../../core/services/arabic_voice_normalizer.dart';
+import '../../core/services/sound_alert_service.dart';
+import '../../core/utils/external_actions.dart';
+import '../../core/widgets/live_speech_ticker.dart';
 import '../../data/models/car_record_model.dart';
 import '../../data/models/excel_vehicle_model.dart';
 import '../providers/auth_provider.dart';
@@ -28,6 +28,7 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
   final FocusNode _recorderFocus = FocusNode();
   final TextEditingController _textPlatesController = TextEditingController();
   bool _useTextInput = false;
+  bool _detailsOpen = false;
 
   @override
   void initState() {
@@ -58,11 +59,13 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
     showExcelImportDialog(context, auditProvider);
   }
 
-  void _showAiSettingsDialog(BuildContext context) {
+  void _showAiSettingsDialog(BuildContext context) async {
+    final initialToken = await AiPlateRefiner.instance.getGroqToken();
+    if (!context.mounted) return;
+    final tokenController = TextEditingController(text: initialToken);
     showDialog<void>(
       context: context,
       builder: (dialogCtx) {
-        final tokenController = TextEditingController();
         bool isObscured = true;
         bool isTesting = false;
         String? testResult;
@@ -70,14 +73,6 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
 
         return StatefulBuilder(
           builder: (ctx, setState) {
-            if (tokenController.text.isEmpty) {
-              AiPlateRefiner.instance.getGroqToken().then((tok) {
-                if (tok.isNotEmpty && tokenController.text.isEmpty && ctx.mounted) {
-                  setState(() => tokenController.text = tok);
-                }
-              });
-            }
-
             final hasToken = tokenController.text.trim().isNotEmpty;
 
             return Directionality(
@@ -197,12 +192,7 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
                       ),
                       const SizedBox(height: 8),
                       InkWell(
-                        onTap: () async {
-                          final uri = Uri.parse('https://console.groq.com/keys');
-                          if (await canLaunchUrl(uri)) {
-                            await launchUrl(uri, mode: LaunchMode.externalApplication);
-                          }
-                        },
+                        onTap: () => ExternalActions.openUrl('https://console.groq.com/keys'),
                         child: const Row(
                           children: [
                             Icon(Icons.open_in_new, color: AppColors.primary, size: 14),
@@ -292,6 +282,8 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
                       await AiPlateRefiner.instance.setGroqToken(tokenController.text.trim());
                       if (dialogCtx.mounted) {
                         Navigator.of(dialogCtx).pop();
+                      }
+                      if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text('تم حفظ إعدادات Groq بنجاح'),
@@ -308,13 +300,14 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
           },
         );
       },
-    );
+    ).whenComplete(tokenController.dispose);
   }
 
   /// Shows a bottom sheet with the full matched plate details (like the inspection screen).
-  void _showMatchedPlateDetails(BuildContext context, AuditedLogItem result) {
-    if (!result.isMatched) return;
-    showModalBottomSheet<void>(
+  Future<void> _showMatchedPlateDetails(BuildContext context, AuditedLogItem result) async {
+    if (!result.isMatched || _detailsOpen) return;
+    _detailsOpen = true;
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: AppColors.cardDark,
@@ -392,26 +385,24 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
         );
       },
     );
-  }
-
-  bool _isLocationUrl(String val) {
-    final v = val.toLowerCase().trim();
-    return v.startsWith('http://') || v.startsWith('https://') || v.contains('maps.google.com') || v.contains('google.com/maps') || v.contains('maps.app.goo.gl');
+    _detailsOpen = false;
   }
 
   Future<void> _openMapUrl(String url) async {
-    try {
-      final uri = Uri.parse(url.trim());
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-    } catch (e) {
-      debugPrint('Error launching maps url: $e');
-    }
+    await ExternalActions.openMapLocation(url);
   }
 
   Widget _detailRow(String label, String value) {
-    final isUrl = _isLocationUrl(value) || label.contains('موقع') || label.contains('خريطة') || label.contains('خرائط');
+    final vLower = value.toLowerCase().trim();
+    final isUrl = vLower.startsWith('http://') ||
+        vLower.startsWith('https://') ||
+        vLower.contains('maps.google.com') ||
+        vLower.contains('google.com/maps') ||
+        vLower.contains('maps.app.goo.gl') ||
+        label.contains('موقع') ||
+        label.contains('خريطة') ||
+        label.contains('خرائط') ||
+        label.toLowerCase().contains('gps');
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
@@ -422,7 +413,7 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
             child: Text(label, style: const TextStyle(color: AppColors.textMutedDark, fontSize: 12)),
           ),
           Expanded(
-            child: isUrl && (value.startsWith('http') || value.contains('google.com'))
+            child: isUrl && value.trim().isNotEmpty && value.trim() != '-'
                 ? InkWell(
                     onTap: () => _openMapUrl(value),
                     child: Row(
@@ -432,7 +423,7 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
                         const SizedBox(width: 4),
                         Flexible(
                           child: Text(
-                            'فتح الموقع في الخريطة',
+                            value.trim().startsWith('http') ? 'فتح الموقع في الخريطة ↗' : value,
                             style: const TextStyle(
                               color: AppColors.primary,
                               fontSize: 13,
@@ -498,17 +489,61 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
                   SnackBar(
                     content: Text('تم تصدير سجل الجلسة بنجاح إلى:\n$path'),
                     backgroundColor: AppColors.success,
+                    action: SnackBarAction(
+                      label: 'مشاركة',
+                      textColor: Colors.black,
+                      onPressed: () => ExternalActions.shareFile(path, text: 'سجل السيارات - صقر المملكة'),
+                    ),
+                  ),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      recordProvider.records.isEmpty
+                          ? 'لا توجد سيارات مسجلة للتصدير'
+                          : 'فشل تصدير ملف الإكسيل، تحقق من أذونات التخزين',
+                    ),
+                    backgroundColor: recordProvider.records.isEmpty ? AppColors.warning : AppColors.error,
                   ),
                 );
               }
             },
           ),
-          // Clear all records
+          // Clear all records with confirmation dialog
           IconButton(
             icon: const Icon(Icons.delete_sweep_outlined, color: AppColors.error, size: 22),
             tooltip: 'تصفير الجلسة',
             onPressed: () async {
-              await recordProvider.clearAllRecords();
+              if (recordProvider.records.isEmpty) return;
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: AlertDialog(
+                    backgroundColor: AppColors.cardDark,
+                    title: const Text('تأكيد مسح السجل بالكامل', style: TextStyle(color: Colors.white, fontSize: 16)),
+                    content: const Text(
+                      'سيتم حذف جميع السيارات المسجلة نهائياً من الجلسة وقاعدة البيانات. هل تريد المتابعة؟',
+                      style: TextStyle(color: AppColors.textSecondaryDark, fontSize: 13),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('إلغاء', style: TextStyle(color: AppColors.textSecondaryDark)),
+                      ),
+                      ElevatedButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+                        child: const Text('حذف الكل', style: TextStyle(color: Colors.white)),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+              if (confirm == true) {
+                await recordProvider.clearAllRecords();
+              }
             },
           ),
         ],
@@ -666,17 +701,23 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
                     ],
                   ),
                 ),
-                ElevatedButton.icon(
-                  onPressed: () => _showFileImportDialog(context, auditProvider),
-                  icon: const Icon(Icons.upload_file_rounded, size: 14),
-                  label: const Text('تغيير الشيت', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                  style: ElevatedButton.styleFrom(
-                    minimumSize: Size.zero,
-                    backgroundColor: const Color(0xFF1E293B),
-                    foregroundColor: Colors.white,
-                    side: const BorderSide(color: Color(0xFF334155)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                Selector<ExcelSortAuditProvider, bool>(
+                  selector: (_, a) => a.sheetFileName.isNotEmpty,
+                  builder: (_, hasSheet, __) => ElevatedButton.icon(
+                    onPressed: () => _showFileImportDialog(context, auditProvider),
+                    icon: const Icon(Icons.upload_file_rounded, size: 14),
+                    label: Text(
+                      hasSheet ? 'تغيير الشيت' : 'رفع شيت',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: Size.zero,
+                      backgroundColor: const Color(0xFF1E293B),
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: Color(0xFF334155)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    ),
                   ),
                 ),
               ],
@@ -763,7 +804,7 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
                           size: 16,
                         ),
                         label: Text(
-                          st.$1 ? 'إيقاف (${st.$2}s)' : 'مباشر • يستمع',
+                          st.$1 ? 'إيقاف (${st.$2}s)' : 'مباشر • بدء الاستماع',
                           style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                         ),
                         style: ElevatedButton.styleFrom(
@@ -913,28 +954,23 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
                         final lines = raw.split(RegExp(r'[\r\n]+')).map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
                         if (lines.isEmpty) return;
 
+                        AuditedLogItem? firstMatched;
                         final matchedCount = await recordProvider.processTextPlates(
                           plates: lines,
                           sortAuditProvider: auditProvider,
                           onPlateAdded: (plate, isMatched, model) {
                             if (isMatched) {
                               SoundAlertService.instance.playMatchAlarm(durationSeconds: 3);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('🎯 لوحة مطابقة بالشيت: $plate ($model)'),
-                                  backgroundColor: AppColors.success,
-                                  duration: const Duration(seconds: 2),
-                                ),
-                              );
-                              if (recordProvider.lastMatchResult != null && recordProvider.lastMatchResult!.isMatched) {
-                                _showMatchedPlateDetails(context, recordProvider.lastMatchResult!);
-                              }
+                              firstMatched ??= recordProvider.lastMatchResult;
                             }
                           },
                         );
 
                         if (!context.mounted) return;
                         _textPlatesController.clear();
+                        if (firstMatched != null && firstMatched!.isMatched) {
+                          _showMatchedPlateDetails(context, firstMatched!);
+                        }
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text('تمت معالجة ${lines.length} لوحة بنجاح ($matchedCount مطابقة)'),
@@ -1095,7 +1131,7 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
           ? () {
               final audit = context.read<ExcelSortAuditProvider>();
               final key = ArabicVoiceNormalizer.plateKey(rec.plateNumber);
-              final item = audit.sheetItems.where((i) => ArabicVoiceNormalizer.plateKey(i.rawPlate) == key).firstOrNull;
+              final item = audit.findItemByPlate(rec.plateNumber);
               _showMatchedPlateDetails(
                 context,
                 AuditedLogItem(
@@ -1133,9 +1169,12 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
                 children: [
                   Row(
                     children: [
-                      Text(
-                        rec.plateNumber,
-                        style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                      Flexible(
+                        child: Text(
+                          rec.plateNumber,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                        ),
                       ),
                       if (rec.isMatched) ...[
                         const SizedBox(width: 8),
@@ -1162,9 +1201,7 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
             ),
             IconButton(
               icon: const Icon(Icons.delete_outline, color: AppColors.textMutedDark, size: 18),
-              onPressed: () {
-                if (rec.id != null) recordProvider.deleteRecord(rec.id!);
-              },
+              onPressed: () => recordProvider.deleteByRecord(rec),
             ),
           ],
         ),
@@ -1247,14 +1284,21 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                result.plateNumber,
-                style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+              Flexible(
+                child: Text(
+                  result.plateNumber,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+                ),
               ),
+              const SizedBox(width: 8),
               if (isMatched)
-                Text(
-                  result.carType,
-                  style: const TextStyle(color: AppColors.info, fontSize: 12, fontWeight: FontWeight.bold),
+                Flexible(
+                  child: Text(
+                    result.carType,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: AppColors.info, fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
                 )
               else
                 Container(

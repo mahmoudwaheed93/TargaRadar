@@ -18,23 +18,28 @@ class AuthRepository {
 
   final FirebaseFirestore _firestore;
 
-  /// Queries the `users` collection by [username], verifies the stored
-  /// password, and maps the document into a [UserModel].
-  ///
-  /// Throws [AuthException] with an Arabic message when:
-  /// - the username does not exist,
-  /// - the password is incorrect,
-  /// - Firestore is unreachable.
+  /// Queries `users` case-insensitively (`usernameLower` first, then legacy `username`),
+  /// verifies the password, updates `lastActiveAt` best-effort, and returns [UserModel].
   Future<UserModel> login({
     required String username,
     required String password,
   }) async {
+    final trimmed = username.trim();
+    final lower = trimmed.toLowerCase();
     try {
-      final snapshot = await _firestore
+      var snapshot = await _firestore
           .collection('users')
-          .where('username', isEqualTo: username.trim())
+          .where('usernameLower', isEqualTo: lower)
           .limit(1)
           .get();
+
+      if (snapshot.docs.isEmpty) {
+        snapshot = await _firestore
+            .collection('users')
+            .where('username', isEqualTo: trimmed)
+            .limit(1)
+            .get();
+      }
 
       if (snapshot.docs.isEmpty) {
         throw const AuthException('اسم المستخدم غير موجود');
@@ -43,8 +48,6 @@ class AuthRepository {
       final doc = snapshot.docs.first;
       final data = doc.data();
 
-      // Read 'pass' (the actual Firestore field); fall back to 'password' for
-      // any documents that may use the longer key.
       final rawStored = data['pass'] ?? data['password'];
       final storedPassword = rawStored?.toString() ?? '';
 
@@ -52,19 +55,23 @@ class AuthRepository {
         throw const AuthException('كلمة المرور غير صحيحة');
       }
 
+      // Record login activity timestamp best-effort without blocking login
+      doc.reference.update({
+        'lastActiveAt': FieldValue.serverTimestamp(),
+        if (data['usernameLower'] == null) 'usernameLower': lower,
+      }).catchError((_) {});
+
       return UserModel.fromMap(data, doc.id);
     } on AuthException {
       rethrow;
     } on FirebaseException catch (e) {
       throw AuthException('تعذر الاتصال بالخادم، حاول مجدداً لاحقاً (${e.code})');
+    } on Exception catch (e) {
+      throw AuthException('تعذر تسجيل الدخول، حاول مجدداً ($e)');
     }
   }
 
   /// Loads a single user document by its id.
-  ///
-  /// Returns `null` when the account no longer exists (e.g. an admin deleted
-  /// it), and throws [AuthException] when Firestore is unreachable. Used on
-  /// cold start to resolve the profile behind a persisted Firebase session.
   Future<UserModel?> fetchUserByUid(String uid) async {
     try {
       final doc = await _firestore.collection('users').doc(uid).get();
@@ -72,6 +79,8 @@ class AuthRepository {
       return UserModel.fromMap(doc.data()!, doc.id);
     } on FirebaseException catch (e) {
       throw AuthException('تعذر الاتصال بالخادم، حاول مجدداً لاحقاً (${e.code})');
+    } on Exception catch (e) {
+      throw AuthException('تعذر قراءة بيانات الحساب ($e)');
     }
   }
 }

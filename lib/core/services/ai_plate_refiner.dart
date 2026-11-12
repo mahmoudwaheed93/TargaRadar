@@ -7,15 +7,8 @@ import '../../data/models/excel_vehicle_model.dart';
 import '../config/secrets.dart';
 import 'arabic_voice_normalizer.dart';
 
-/// Fallback plate extractor powered by ultra-fast Groq LPU (qwen/qwen3.8-27b, ~400ms)
-/// or Hugging Face Inference Providers.
-///
-/// SPEED RULES (so the app keeps 0ms feel on the local engine):
-///  * NEVER on the hot path. The local [ArabicVoiceNormalizer] runs first in <0.1ms
-///    on every partial result; this class is only called in the background when
-///    the local parser leaves unparsed digits in noisy or distorted speech.
-///  * reasoning_effort: "none", temperature: 0, tiny output (max_tokens: 90).
-///  * In-memory cache + de-duplication of identical in-flight requests.
+/// Fallback plate extractor powered by ultra-fast Groq LPU (qwen/qwen3.8-27b)
+/// with automatic Hugging Face Router fallback if Groq fails or rate-limits.
 class AiPlateRefiner {
   AiPlateRefiner._();
   static final AiPlateRefiner instance = AiPlateRefiner._();
@@ -79,45 +72,52 @@ class AiPlateRefiner {
   static const String _systemPrompt =
       'Extract Arabic vehicle license plates from fast or noisy Egyptian & Saudi speech-recognition text. '
       'Handle both Letters-First ("د ب ن 2816") and Digits-First ("2816 د ب ن") speech. '
+      'EVERY plate MUST have EXACTLY 3 Arabic letters (never 2 or 4) and 3 or 4 digits. '
+      'If only 3 digits are spoken after 3 letters (e.g. "د ب ن 123"), append a trailing 0 ("1230"). '
       'Convert spoken numbers to digits (e.g. "تلات تلاف متين تلاته وخمسين" -> "3253", "الفين تمانية مية واحد وستين" -> "2861", "زيرو" -> "0"). '
-      'Convert spoken letter names to space-separated single Arabic letters (e.g. "به نون قاف" -> "ب ن ق", "سين" -> "س", "دال" -> "د"). '
+      'Convert spoken letter names to 3 space-separated single Arabic letters (e.g. "به نون قاف" -> "ب ن ق", "سين" -> "س", "دال" -> "د"). '
       'Only set "note" if explicit remark trigger (ملحوظة/ملاحظة/نوت/اكتب/سجل) or car condition (مركونة/واقفة غلط/عطلانة/مصدومة/مخالفة/ماشية) is spoken; otherwise note MUST be "". '
       'Reply with ONLY a valid JSON array, strictly without prose or markdown: '
       '[{"letters":"ب ن ق","digits":"3253","brand":"","note":""}]. '
-      'If no valid plate is detected, reply with []. Never invent digits or letters.';
+      'If no valid 3-letter plate is detected, reply with []. Never invent digits or letters.';
 
   final http.Client _client = http.Client();
   final Map<String, List<ParsedPlateData>> _cache = {};
   final Set<String> _inFlight = {};
 
-  Future<List<ParsedPlateData>> refine(String rawTranscript) async {
-    await _ensureInit();
-    if (!isEnabled) return const [];
-    final key = ArabicVoiceNormalizer.normalizeArabicSpoken(rawTranscript);
-    if (key.isEmpty) return const [];
+  /// Bounds prompt size to the latest ~14 words so accumulated noise cannot
+  /// trigger AI hallucinations on long voice sessions.
+  static String _trimToRecentTail(String text) {
+    final words = text.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    if (words.length <= 14) return text.trim();
+    return words.sublist(words.length - 14).join(' ');
+  }
 
-    final cached = _cache[key];
-    if (cached != null) return cached;
-    if (!_inFlight.add(key)) return const [];
-
+  Future<List<ParsedPlateData>?> _queryProvider({
+    required String url,
+    required String apiKey,
+    required String modelName,
+    required String input,
+    required bool isGroq,
+  }) async {
     final started = DateTime.now();
     try {
       final payload = <String, dynamic>{
-        'model': model,
+        'model': modelName,
         'temperature': 0,
         'max_tokens': 90,
-        if (usesGroq) 'reasoning_effort': 'none',
+        if (isGroq) 'reasoning_effort': 'none',
         'messages': [
           {'role': 'system', 'content': _systemPrompt},
-          {'role': 'user', 'content': rawTranscript},
+          {'role': 'user', 'content': input},
         ],
       };
 
       final res = await _client
           .post(
-            Uri.parse(endpoint),
+            Uri.parse(url),
             headers: {
-              'Authorization': 'Bearer $token',
+              'Authorization': 'Bearer $apiKey',
               'Content-Type': 'application/json',
             },
             body: jsonEncode(payload),
@@ -125,32 +125,72 @@ class AiPlateRefiner {
           .timeout(_timeout);
 
       if (res.statusCode != 200) {
-        debugPrint('AI refine HTTP ${res.statusCode} (${usesGroq ? "Groq" : "HF"})');
-        return const [];
+        debugPrint('AI refine HTTP ${res.statusCode} (${isGroq ? "Groq" : "HF"})');
+        return null;
       }
+
       final body = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
       final content = body['choices'][0]['message']['content'] as String? ?? '';
-      final allowNote = ArabicVoiceNormalizer.hasValidNoteTriggerOrKeyword(rawTranscript);
+      final allowNote = ArabicVoiceNormalizer.hasValidNoteTriggerOrKeyword(input);
       final plates = _parse(content, allowNote: allowNote);
-
-      if (_cache.length >= _maxCache) _cache.remove(_cache.keys.first);
-      _cache[key] = plates;
-      debugPrint('AI refine [${usesGroq ? "Groq" : "HF"}] ${DateTime.now().difference(started).inMilliseconds}ms '
+      debugPrint('AI refine [${isGroq ? "Groq" : "HF"}] ${DateTime.now().difference(started).inMilliseconds}ms '
           '-> ${plates.map((p) => p.fullPlate).toList()}');
       return plates;
     } on TimeoutException {
-      debugPrint('AI refine timeout');
-      return const [];
+      debugPrint('AI refine timeout (${isGroq ? "Groq" : "HF"})');
+      return null;
     } catch (e) {
-      debugPrint('AI refine error: $e');
-      return const [];
+      debugPrint('AI refine error (${isGroq ? "Groq" : "HF"}): $e');
+      return null;
+    }
+  }
+
+  Future<List<ParsedPlateData>> refine(String rawTranscript) async {
+    await _ensureInit();
+    if (!isEnabled) return const [];
+    final bounded = _trimToRecentTail(rawTranscript);
+    final key = ArabicVoiceNormalizer.normalizeArabicSpoken(bounded);
+    if (key.isEmpty) return const [];
+
+    final cached = _cache[key];
+    if (cached != null) return cached;
+    if (!_inFlight.add(key)) return const [];
+
+    try {
+      List<ParsedPlateData>? plates;
+      if (usesGroq) {
+        plates = await _queryProvider(
+          url: _groqEndpoint,
+          apiKey: effectiveGroqToken,
+          modelName: _groqModel,
+          input: bounded,
+          isGroq: true,
+        );
+      }
+
+      // Automatic fallback to Hugging Face Router if Groq failed/timed out or is unconfigured
+      if (plates == null && kHuggingFaceToken.isNotEmpty) {
+        plates = await _queryProvider(
+          url: _hfEndpoint,
+          apiKey: kHuggingFaceToken,
+          modelName: _hfModel,
+          input: bounded,
+          isGroq: false,
+        );
+      }
+
+      final finalPlates = plates ?? const <ParsedPlateData>[];
+      if (plates != null) {
+        if (_cache.length >= _maxCache) _cache.remove(_cache.keys.first);
+        _cache[key] = finalPlates;
+      }
+      return finalPlates;
     } finally {
       _inFlight.remove(key);
     }
   }
 
-  /// Strictly validates the model output: anything that is not
-  /// 2-4 Arabic letters + 2-4 digits is dropped. Handles both [...] arrays and single {...} objects.
+  /// Strictly enforces EXACTLY 3 Arabic letters + 3-4 digits (padding 3 digits with trailing '0').
   List<ParsedPlateData> _parse(String content, {bool allowNote = true}) {
     List<dynamic> raw = const [];
     final arrStart = content.indexOf('[');
@@ -176,9 +216,11 @@ class AiPlateRefiner {
       if (item is! Map) continue;
       final lettersRaw = ArabicVoiceNormalizer.normalizePlateForMatch('${item['letters'] ?? ''}');
       final digitsRaw = ArabicVoiceNormalizer.normalizePlateForMatch('${item['digits'] ?? ''}');
-      if (!RegExp(r'^[ا-ي]{2,4}$').hasMatch(lettersRaw)) continue;
-      if (!RegExp(r'^\d{2,4}$').hasMatch(digitsRaw)) continue;
+      // Strictly 3 Arabic letters only (never 2, never 4)
+      if (!RegExp(r'^[ا-ي]{3}$').hasMatch(lettersRaw)) continue;
+      if (!RegExp(r'^\d{3,4}$').hasMatch(digitsRaw)) continue;
 
+      final finalDigits = digitsRaw.length == 3 ? '${digitsRaw}0' : digitsRaw;
       final letters = lettersRaw.split('').join(' ');
       final brand = '${item['brand'] ?? ''}'.trim();
       final rawNote = allowNote ? '${item['note'] ?? ''}'.trim() : '';
@@ -186,11 +228,12 @@ class AiPlateRefiner {
       final note = (rawNote.isEmpty || isOnlyLetters) ? '' : rawNote;
 
       out.add(ParsedPlateData(
-        fullPlate: '$letters $digitsRaw',
+        fullPlate: '$letters $finalDigits',
         letters: letters,
-        digits: digitsRaw,
+        digits: finalDigits,
         detectedBrand: brand.isEmpty ? '-' : brand,
         detectedNote: note.isEmpty ? '-' : note,
+        isComplete: true,
       ));
     }
     return out;

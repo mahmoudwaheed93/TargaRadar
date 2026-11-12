@@ -5,13 +5,20 @@ import '../models/car_record_model.dart';
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
+  static Future<Database>? _initFuture;
 
   DatabaseHelper._init();
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDB('car_logix_v3.db');
-    return _database!;
+    _initFuture ??= _initDB('car_logix_v3.db');
+    try {
+      _database = await _initFuture;
+      return _database!;
+    } catch (e) {
+      _initFuture = null;
+      rethrow;
+    }
   }
 
   Future<Database> _initDB(String filePath) async {
@@ -53,12 +60,16 @@ class DatabaseHelper {
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
-      try {
-        await db.execute('ALTER TABLE car_records ADD COLUMN is_matched INTEGER DEFAULT 0');
-        await db.execute('ALTER TABLE car_records ADD COLUMN color TEXT DEFAULT "-"');
-        await db.execute('ALTER TABLE car_records ADD COLUMN owner TEXT DEFAULT "-"');
-        await db.execute('ALTER TABLE car_records ADD COLUMN session_id TEXT DEFAULT "default-session"');
-      } catch (_) {}
+      for (final ddl in [
+        'ALTER TABLE car_records ADD COLUMN is_matched INTEGER DEFAULT 0',
+        'ALTER TABLE car_records ADD COLUMN color TEXT DEFAULT "-"',
+        'ALTER TABLE car_records ADD COLUMN owner TEXT DEFAULT "-"',
+        'ALTER TABLE car_records ADD COLUMN session_id TEXT DEFAULT "default-session"',
+      ]) {
+        try {
+          await db.execute(ddl);
+        } catch (_) {}
+      }
     }
     if (oldVersion < 3) {
       try {
@@ -72,6 +83,7 @@ class DatabaseHelper {
   String _currentUserId = '';
   set currentUserId(String uid) => _currentUserId = uid;
   String get currentUserId => _currentUserId;
+  void resetUser() => _currentUserId = '';
 
   Future<int> insertCarRecord(CarRecord record) async {
     final db = await database;
@@ -126,7 +138,6 @@ class DatabaseHelper {
     );
   }
 
-  
   Future<int> updateCarRecordBrandAndNotes(int id, {String? carType, String? notes}) async {
     final values = <String, dynamic>{};
     if (carType != null && carType.isNotEmpty && carType != '-') values['car_type'] = carType;
@@ -144,9 +155,11 @@ class DatabaseHelper {
   Future<int> updateCarRecord(CarRecord record) async {
     if (record.id == null) return 0;
     final db = await database;
+    final map = record.toMap();
+    map['user_id'] = _currentUserId;
     return await db.update(
       'car_records',
-      record.toMap(),
+      map,
       where: 'id = ? AND user_id = ?',
       whereArgs: [record.id, _currentUserId],
     );
@@ -171,7 +184,11 @@ class DatabaseHelper {
   }
 
   Future<void> close() async {
-    final db = await database;
-    await db.close();
+    if (_database != null) {
+      final db = _database!;
+      _database = null;
+      _initFuture = null;
+      await db.close();
+    }
   }
 }

@@ -1,10 +1,13 @@
-import '../../core/utils/date_formatter.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/services/arabic_voice_normalizer.dart';
 import '../../core/services/excel_table_service.dart';
+import '../../core/utils/date_formatter.dart';
 import '../../data/models/excel_vehicle_model.dart';
 
 class ExcelSortAuditProvider extends ChangeNotifier {
@@ -12,9 +15,8 @@ class ExcelSortAuditProvider extends ChangeNotifier {
   static const String _filenameKeyBase = 'carlogix_sort_filename';
   static const String _feedKeyBase = 'carlogix_sort_feed';
 
-  /// The uid that scopes all persisted keys. Set via [setCurrentUserId]
-  /// after login so each account sees only its own data.
   String _currentUserId = '';
+  int _logSeq = 0;
 
   String get _sheetKey => '${_sheetKeyBase}_$_currentUserId';
   String get _filenameKey => '${_filenameKeyBase}_$_currentUserId';
@@ -92,8 +94,19 @@ class ExcelSortAuditProvider extends ChangeNotifier {
 
   ExcelSortAuditProvider();
 
-  /// Sets the current user id and reloads data scoped to that user.
-  /// Must be called after login (and before any UI read).
+  Future<File?> _largeSheetCacheFile() async {
+    if (kIsWeb) return null;
+    try {
+      final base = await getApplicationDocumentsDirectory();
+      final dir = Directory(p.join(base.path, 'sheet_cache'));
+      if (!await dir.exists()) await dir.create(recursive: true);
+      final safeUid = _currentUserId.isEmpty ? 'default' : _currentUserId;
+      return File(p.join(dir.path, 'sort_sheet_$safeUid.json'));
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> setCurrentUserId(String uid) async {
     if (_currentUserId == uid) return;
     _currentUserId = uid;
@@ -108,19 +121,29 @@ class ExcelSortAuditProvider extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       _sheetFileName = prefs.getString(_filenameKey) ?? '';
 
-      final savedSheet = prefs.getString(_sheetKey);
-      if (savedSheet != null && savedSheet.isNotEmpty) {
-        final decoded = jsonDecode(savedSheet) as List;
-        _sheetItems = decoded.map((e) => ExcelVehicleItem.fromJson(e as Map<String, dynamic>)).toList();
+      String? rawSheet = prefs.getString(_sheetKey);
+      if (rawSheet == null || rawSheet.isEmpty) {
+        final cacheFile = await _largeSheetCacheFile();
+        if (cacheFile != null && await cacheFile.exists()) {
+          rawSheet = await cacheFile.readAsString();
+        }
+      }
+
+      if (rawSheet != null && rawSheet.isNotEmpty) {
+        final decoded = jsonDecode(rawSheet) as List;
+        _sheetItems = decoded
+            .map((e) => ExcelVehicleItem.fromJson(e as Map<String, dynamic>))
+            .toList();
       } else {
-        // لا بيانات محفوظة لهذا المستخدم — نبدأ فارغين
         _sheetItems = [];
       }
 
       final savedFeed = prefs.getString(_feedKey);
       if (savedFeed != null && savedFeed.isNotEmpty) {
         final decodedFeed = jsonDecode(savedFeed) as List;
-        _liveAuditFeed = decodedFeed.map((e) => AuditedLogItem.fromJson(e as Map<String, dynamic>)).toList();
+        _liveAuditFeed = decodedFeed
+            .map((e) => AuditedLogItem.fromJson(e as Map<String, dynamic>))
+            .toList();
       } else {
         _liveAuditFeed = [];
       }
@@ -137,7 +160,6 @@ class ExcelSortAuditProvider extends ChangeNotifier {
 
   Timer? _persistTimer;
 
-  /// Debounced disk persist so rapid speech doesn't freeze the main UI thread
   void _schedulePersist() {
     _persistTimer?.cancel();
     _persistTimer = Timer(const Duration(seconds: 2), () {
@@ -149,13 +171,28 @@ class ExcelSortAuditProvider extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_filenameKey, _sheetFileName);
+
+      final encodedSheet = jsonEncode(_sheetItems.map((e) => e.toJson()).toList());
       if (_sheetItems.length <= 3000) {
-        await prefs.setString(_sheetKey, jsonEncode(_sheetItems.map((e) => e.toJson()).toList()));
+        await prefs.setString(_sheetKey, encodedSheet);
+        final cacheFile = await _largeSheetCacheFile();
+        if (cacheFile != null && await cacheFile.exists()) {
+          await cacheFile.delete();
+        }
       } else {
-        // Too big for SharedPreferences: kept in memory for this session only.
+        // Persist large >3000-row sheets on disk so restarts never lose the table
         await prefs.remove(_sheetKey);
+        final cacheFile = await _largeSheetCacheFile();
+        if (cacheFile != null) {
+          await cacheFile.writeAsString(encodedSheet, flush: true);
+        }
       }
-      await prefs.setString(_feedKey, jsonEncode(_liveAuditFeed.map((e) => e.toJson()).toList()));
+
+      // Cap persisted live audit log to 500 recent items to keep SharedPreferences fast
+      final feedToSave = _liveAuditFeed.length > 500
+          ? _liveAuditFeed.take(500).toList()
+          : _liveAuditFeed;
+      await prefs.setString(_feedKey, jsonEncode(feedToSave.map((e) => e.toJson()).toList()));
     } catch (e) {
       debugPrint('Error saving sort audit data: $e');
     }
@@ -172,8 +209,13 @@ class ExcelSortAuditProvider extends ChangeNotifier {
     }
   }
 
-  /// Loads the vehicles of an already-parsed table (any number of sheets in
-  /// the workbook: the data sheet was picked by the fast reader).
+  /// Instant O(1) lookup by plate string using the pre-built hash index.
+  ExcelVehicleItem? findItemByPlate(String plate) {
+    final idx = _index[ArabicVoiceNormalizer.plateKey(plate)];
+    if (idx == null || idx < 0 || idx >= _sheetItems.length) return null;
+    return _sheetItems[idx];
+  }
+
   Future<bool> importTable(ExcelTable table, String fileName) async {
     _isLoading = true;
     notifyListeners();
@@ -244,7 +286,6 @@ class ExcelSortAuditProvider extends ChangeNotifier {
     }
   }
 
-  /// Reset to sample demo sheet data
   Future<void> loadSampleData() async {
     _sheetItems = List.from(sampleExcelData);
     _sheetFileName = 'شيت_بيانات_السيارات.xlsx';
@@ -255,7 +296,6 @@ class ExcelSortAuditProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Reset audit status
   Future<void> clearAuditFeed() async {
     _sheetItems = _sheetItems.map((e) => e.copyWith(isAudited: false)).toList();
     _liveAuditFeed.clear();
@@ -264,14 +304,15 @@ class ExcelSortAuditProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Match a spoken or manually entered plate against the sheet
+  /// Match a spoken or manually entered plate against the sheet (O(1))
   AuditedLogItem processAuditPlate(String fullPlate, {String? detectedBrand, String? detectedNote}) {
     final normPlate = ArabicVoiceNormalizer.plateKey(fullPlate);
 
     final matchIndex = _index[normPlate] ?? -1;
 
     final isMatched = matchIndex != -1;
-    final nowStr = AppDateFormatter.time12(DateTime.now());
+    final now = DateTime.now();
+    final nowStr = AppDateFormatter.time12(now);
 
     final ExcelVehicleItem? matchedItem = isMatched ? _sheetItems[matchIndex] : null;
 
@@ -283,7 +324,7 @@ class ExcelSortAuditProvider extends ChangeNotifier {
     }
 
     final logItem = AuditedLogItem(
-      id: 'log-${DateTime.now().millisecondsSinceEpoch}',
+      id: 'log-${now.microsecondsSinceEpoch}-${_logSeq++}',
       seqNumber: _liveAuditFeed.length + 1,
       plateNumber: fullPlate,
       normalizedPlate: normPlate,
@@ -306,5 +347,11 @@ class ExcelSortAuditProvider extends ChangeNotifier {
     notifyListeners();
 
     return logItem;
+  }
+
+  @override
+  void dispose() {
+    _persistTimer?.cancel();
+    super.dispose();
   }
 }

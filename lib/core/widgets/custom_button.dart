@@ -31,10 +31,12 @@ class CustomButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDisabled = isLoading || onPressed == null;
     final effectiveBg = backgroundColor ??
         (isOutlined ? Colors.transparent : AppColors.primary);
-    final effectiveTextColor = textColor ??
-        (isOutlined ? AppColors.primary : Colors.black);
+    final effectiveTextColor = isDisabled && !isLoading
+        ? AppColors.textMutedDark
+        : (textColor ?? (isOutlined ? AppColors.primary : Colors.black));
 
     return SizedBox(
       width: width ?? double.infinity,

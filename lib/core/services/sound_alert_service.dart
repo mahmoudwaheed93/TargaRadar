@@ -10,6 +10,7 @@ class SoundAlertService {
   AudioPlayer? _player;
   bool _warmedUp = false;
   DateTime? _lastAlertTime;
+  Timer? _stopTimer;
 
   /// Pre-configures AudioContext and pre-loads the alert sound so the first
   /// matched plate fires at 0ms without disk-decode lag or AudioFocus interruption.
@@ -35,6 +36,7 @@ class SoundAlertService {
       }
       _lastAlertTime = now;
 
+      _stopTimer?.cancel();
       _player ??= AudioPlayer();
       final player = _player;
       if (player == null) return;
@@ -50,8 +52,8 @@ class SoundAlertService {
         } catch (_) {}
       }());
 
-      Timer(Duration(seconds: durationSeconds), () {
-        player.stop().catchError((_) {});
+      _stopTimer = Timer(Duration(seconds: durationSeconds), () {
+        _player?.stop().catchError((_) {});
       });
     } catch (e) {
       debugPrint('[SoundAlertService] Error playing alert: $e');
@@ -59,12 +61,16 @@ class SoundAlertService {
   }
 
   Future<void> stop() async {
+    _stopTimer?.cancel();
+    _stopTimer = null;
     try {
       await _player?.stop();
     } catch (_) {}
   }
 
   void dispose() {
+    _stopTimer?.cancel();
+    _stopTimer = null;
     _player?.dispose();
     _player = null;
     _warmedUp = false;

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
+import '../providers/car_record_provider.dart';
+import '../providers/inspection_provider.dart';
 import 'inspection_screen.dart';
 import 'profile_screen.dart';
 import 'two_file_match_screen.dart';
@@ -24,13 +27,21 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.backgroundDark,
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
+    return PopScope(
+      canPop: _currentIndex == 0,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _currentIndex != 0) {
+          setState(() => _currentIndex = 0);
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.backgroundDark,
+        body: IndexedStack(
+          index: _currentIndex,
+          children: _screens,
+        ),
+        bottomNavigationBar: _buildCustomBottomBar(),
       ),
-      bottomNavigationBar: _buildCustomBottomBar(),
     );
   }
 
@@ -59,33 +70,10 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
-            // Tab 1: التسجيل (Active Default)
-            _buildNavItem(
-              index: 0,
-              icon: Icons.mic_rounded,
-              label: 'التسجيل',
-            ),
-
-            // Tab 2: الفحص
-            _buildNavItem(
-              index: 1,
-              icon: Icons.assignment_outlined,
-              label: 'الفحص',
-            ),
-
-            // Tab 3: الفرز
-            _buildNavItem(
-              index: 2,
-              icon: Icons.swap_vert_rounded,
-              label: 'الفرز',
-            ),
-
-            // Tab 4: حسابي
-            _buildNavItem(
-              index: 3,
-              icon: Icons.person_outline_rounded,
-              label: 'حسابي',
-            ),
+            _buildNavItem(index: 0, icon: Icons.mic_rounded, label: 'التسجيل'),
+            _buildNavItem(index: 1, icon: Icons.assignment_outlined, label: 'الفحص'),
+            _buildNavItem(index: 2, icon: Icons.swap_vert_rounded, label: 'الفرز'),
+            _buildNavItem(index: 3, icon: Icons.person_outline_rounded, label: 'حسابي'),
           ],
         ),
       ),
@@ -100,7 +88,17 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     final isSelected = _currentIndex == index;
 
     return InkWell(
-      onTap: () => setState(() => _currentIndex = index),
+      onTap: () async {
+        if (index != _currentIndex) {
+          final rec = context.read<CarRecordProvider>();
+          final insp = context.read<InspectionProvider>();
+          if (rec.isListening) await rec.stopVoiceListening();
+          if (insp.isListening) await insp.stopListening();
+        }
+        if (mounted) {
+          setState(() => _currentIndex = index);
+        }
+      },
       borderRadius: BorderRadius.circular(16),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),

@@ -27,7 +27,7 @@ class CarRecordProvider extends ChangeNotifier {
   String _currentTranscript = '';
   LocationDetails? _lastKnownLocation;
 
-  // Real-time HUD states matching web app
+  // Real-time HUD states
   String _lastReadPlate = '';
   bool _lastReadIsWanted = false;
   Map<String, String> _currentSlots = {
@@ -41,21 +41,18 @@ class CarRecordProvider extends ChangeNotifier {
   int _listeningTimer = 0;
   Timer? _timer;
 
-  // Set of recorded plates in current session to avoid duplicate row inserts
+  // All plate maps use canonical ArabicVoiceNormalizer.plateKey uniformly
   final Set<String> _recordedPlates = {};
-  // plate key -> db row id / latest spoken note (a note is usually spoken
-  // AFTER the plate, so the saved row must be updated when it arrives)
   final Map<String, int> _recordIds = {};
   final Map<String, String> _latestNote = {};
   final Map<String, CarRecord> _pendingUpdates = {};
   final Map<String, String> _upgradedKeyRedirects = {};
   final Map<String, CarRecord> _recordByKey = {};
   String _lastProcessedTranscript = '';
-  String? _lastKey; // last plate recorded (target of a note said after a pause)
+  String? _lastKey;
   int _orphanSession = -1;
   String? _orphanTarget;
 
-  // Location is refreshed in the background: a row must NEVER wait for GPS.
   bool _locRefreshing = false;
   DateTime? _locAt;
 
@@ -77,13 +74,11 @@ class CarRecordProvider extends ChangeNotifier {
     }
   }
 
-  /// A note spoken alone ("ملحوظة ...") goes to the plate recorded just before.
   void _handleOrphanNote(String? note, int session) {
     if (note == null) return;
     _handleOrphanData(OrphanVoiceData(note: note), session);
   }
 
-  /// Live instant update for car brand and note spoken after a pause without a plate
   void _handleOrphanData(OrphanVoiceData data, int session) {
     if (!data.hasData || _records.isEmpty) return;
 
@@ -94,7 +89,7 @@ class CarRecordProvider extends ChangeNotifier {
     final key = _orphanTarget ?? _lastKey;
     if (key == null) return;
 
-    final idx = _records.indexWhere((r) => ArabicVoiceNormalizer.normalizePlateForMatch(r.plateNumber) == key);
+    final idx = _records.indexWhere((r) => ArabicVoiceNormalizer.plateKey(r.plateNumber) == key);
     if (idx == -1) return;
 
     final existing = _records[idx];
@@ -116,6 +111,7 @@ class CarRecordProvider extends ChangeNotifier {
     if (changed) {
       final updated = existing.copyWith(carType: curBrand, notes: curNote);
       _records[idx] = updated;
+      _recordByKey[key] = updated;
       _recordsVersion++;
       _recentRecords = _records.take(10).toList();
       notifyListeners();
@@ -123,17 +119,13 @@ class CarRecordProvider extends ChangeNotifier {
     }
   }
 
-  // Recorder (user) name: editable, persisted, and written to every exported row
   static const String _recorderKeyBase = 'carlogix_recorder_name';
   String _recorderName = '';
-  bool _recorderLoaded = false;
+  Completer<void> _recorderLoadCompleter = Completer<void>();
   String get recorderName => _recorderName;
 
-  /// The uid of the current user — set this after login so the recorder name
-  /// and DB records are scoped per account.
   String _currentUserId = '';
 
-  /// Must be called after login to scope records and preferences per user.
   Future<void> setCurrentUserId(String uid) async {
     _currentUserId = uid;
     _dbHelper.currentUserId = uid;
@@ -141,9 +133,17 @@ class CarRecordProvider extends ChangeNotifier {
     _recordIds.clear();
     _latestNote.clear();
     _recordByKey.clear();
+    _pendingUpdates.clear();
     _upgradedKeyRedirects.clear();
     _currentTranscript = '';
-    _recorderLoaded = false;
+    _lastProcessedTranscript = '';
+    _lastKey = null;
+    _lastReadPlate = '';
+    _lastReadIsWanted = false;
+    _lastMatchResult = null;
+    if (_recorderLoadCompleter.isCompleted) {
+      _recorderLoadCompleter = Completer<void>();
+    }
     await _loadRecorderName();
     await loadRecords();
   }
@@ -183,16 +183,15 @@ class CarRecordProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('Error loading recorder name: $e');
     } finally {
-      _recorderLoaded = true;
+      if (!_recorderLoadCompleter.isCompleted) {
+        _recorderLoadCompleter.complete();
+      }
       notifyListeners();
     }
   }
 
-  /// Uses [fallback] (the logged-in username) only while nothing was saved yet.
   Future<void> ensureRecorderName(String? fallback) async {
-    while (!_recorderLoaded) {
-      await Future.delayed(const Duration(milliseconds: 50));
-    }
+    await _recorderLoadCompleter.future;
     if (_recorderName.trim().isEmpty && fallback != null && fallback.trim().isNotEmpty) {
       await setRecorderName(fallback.trim());
     }
@@ -229,11 +228,17 @@ class CarRecordProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      _records = await _dbHelper.getAllCarRecords();
+      final loaded = await _dbHelper.getAllCarRecords();
+      _records = loaded;
+      _recordedPlates.clear();
+      _recordByKey.clear();
+      _recordIds.clear();
+      _latestNote.clear();
       _recordsVersion++;
-      _recentRecords = await _dbHelper.getRecentCarRecords(limit: 10);
+      _recentRecords = _records.take(10).toList();
       for (final r in _records) {
         final key = ArabicVoiceNormalizer.plateKey(r.plateNumber);
+        if (key.isEmpty) continue;
         _recordedPlates.add(key);
         _recordByKey[key] = r;
         if (r.id != null) {
@@ -249,7 +254,6 @@ class CarRecordProvider extends ChangeNotifier {
     }
   }
 
-  /// Toggle continuous live voice dictation
   Future<void> toggleVoiceListening({
     required ExcelSortAuditProvider sortAuditProvider,
     required Function(String plate, bool isMatched, String carModel) onPlateAdded,
@@ -268,11 +272,13 @@ class CarRecordProvider extends ChangeNotifier {
     required ExcelSortAuditProvider sortAuditProvider,
     required Function(String plate, bool isMatched, String carModel) onPlateAdded,
   }) async {
+    if (_isListening) return;
     _isListening = true;
     _currentTranscript = '';
+    _lastProcessedTranscript = '';
     _listeningTimer = 0;
     _orphanSession = -1;
-    unawaited(_refreshLocation()); // warm up GPS while the user starts talking
+    unawaited(_refreshLocation());
     unawaited(SoundAlertService.instance.warmUp());
     _startTimer();
     notifyListeners();
@@ -286,12 +292,11 @@ class CarRecordProvider extends ChangeNotifier {
         }
         if (rawTranscript == _lastProcessedTranscript && !isFinal) return;
         _lastProcessedTranscript = isFinal ? '' : rawTranscript;
-        _currentTranscript = ArabicVoiceNormalizer.extractActiveTickerText(normalized);
+        _currentTranscript = ArabicVoiceNormalizer.extractActiveTickerText(normalized, isFinal: isFinal);
         if (slots.isNotEmpty) {
           _currentSlots = slots;
         }
 
-        // Process special mode sticky notes (O(1) checks without re-normalizing)
         if (normalized.contains('بدايه جراج يمين') || normalized.contains('جراج يمين')) {
           _stickyNote = 'جراج يمين';
         } else if (normalized.contains('بدايه برحه يسار') || normalized.contains('برحه يسار')) {
@@ -301,7 +306,7 @@ class CarRecordProvider extends ChangeNotifier {
           _stickyNote = null;
         }
 
-        // 1. Process all completed plates immediately (0ms wait)
+        // 1. Commit all completed 4-digit plates at 0ms
         final completePlates = extractedPlates.where((p) => p.isComplete).toList();
         for (int i = 0; i < completePlates.length; i++) {
           _ingestPlate(
@@ -312,17 +317,23 @@ class CarRecordProvider extends ChangeNotifier {
           );
         }
 
-        // 2. Trailing incomplete plate (e.g. 2-letter digits-first or <4 digits):
-        // Flush immediately on finalResult, otherwise debounce 550ms for the final letter/digit.
+        // 2. Trailing 3-digit plate: wait 350ms for optional 4th digit; else pad '0' & close
         _incompletePlateTimer?.cancel();
         _pendingIncompletePlate = null;
         if (extractedPlates.isNotEmpty && !extractedPlates.last.isComplete) {
           final pending = extractedPlates.last;
+          void commitThreeDigit() {
+            final closed = ArabicVoiceNormalizer.finalizeThreeDigitPlate(pending);
+            _ingestPlate(closed, sortAuditProvider, onPlateAdded);
+            _applySlotsFromPlate(closed);
+            _currentTranscript = '';
+          }
+
           if (isFinal) {
-            _ingestPlate(pending, sortAuditProvider, onPlateAdded);
+            commitThreeDigit();
           } else {
-            _pendingIncompletePlate = () => _ingestPlate(pending, sortAuditProvider, onPlateAdded);
-            _incompletePlateTimer = Timer(const Duration(milliseconds: 200), () {
+            _pendingIncompletePlate = commitThreeDigit;
+            _incompletePlateTimer = Timer(_threeDigitCloseDebounce, () {
               final flush = _pendingIncompletePlate;
               _pendingIncompletePlate = null;
               if (!_isListening || flush == null) return;
@@ -332,7 +343,7 @@ class CarRecordProvider extends ChangeNotifier {
           }
         }
 
-        // 3. AI fallback on any unparsed trailing digits (works even after earlier plates!)
+        // 3. AI fallback strictly on the unparsed speech tail
         final unparsedTail = ArabicVoiceNormalizer.extractUnparsedTail(normalized);
         _scheduleAiFallback(rawTranscript, unparsedTail, sortAuditProvider, onPlateAdded);
 
@@ -347,18 +358,18 @@ class CarRecordProvider extends ChangeNotifier {
     );
   }
 
-  /// Records one plate (shared by the local engine and the AI fallback).
+  /// Records one plate (shared by local engine and AI fallback).
   void _ingestPlate(
     ParsedPlateData plateData,
     ExcelSortAuditProvider sortAuditProvider,
     Function(String plate, bool isMatched, String carModel) onPlateAdded, {
     bool isLatestInUtterance = true,
   }) {
-    final norm = ArabicVoiceNormalizer.normalizePlateForMatch(plateData.fullPlate);
+    final norm = ArabicVoiceNormalizer.plateKey(plateData.fullPlate);
+    if (norm.isEmpty) return;
     final spokenNote = plateData.detectedNote != '-' ? plateData.detectedNote : null;
 
     if (_recordedPlates.contains(norm)) {
-      // Fast O(1) pre-check before touching _records list on rapid partial speech ticks
       final spokenBrand = plateData.detectedBrand != '-' ? plateData.detectedBrand : null;
       final cached = _recordByKey[norm];
       if (isLatestInUtterance && norm != _lastKey) {
@@ -397,7 +408,7 @@ class CarRecordProvider extends ChangeNotifier {
           _records[idx] = updated;
           _recordByKey[norm] = updated;
           _recordsVersion++;
-      _recentRecords = _records.take(10).toList();
+          _recentRecords = _records.take(10).toList();
           notifyListeners();
           _persistRecordUpdate(norm, updated);
         }
@@ -405,16 +416,15 @@ class CarRecordProvider extends ChangeNotifier {
       return;
     }
 
-    // In-place upgrade defense: if the previous card was inserted within 5 seconds
-    // and received trailing digits ("د ب ق 28" -> "د ب ق 2852") or trailing letters
-    // ("ب ن 3253" -> "ب ن ق 3253"):
+    // In-place upgrade defense within 5 seconds
     if (_records.isNotEmpty) {
       final prev = _records.first;
-      final prevNorm = ArabicVoiceNormalizer.normalizePlateForMatch(prev.plateNumber);
+      final prevNorm = ArabicVoiceNormalizer.plateKey(prev.plateNumber);
       if (DateTime.now().difference(prev.registrationDate).inSeconds <= 5 &&
           ArabicVoiceNormalizer.isPlateUpgrade(prev.plateNumber, plateData.fullPlate)) {
         _recordedPlates.remove(prevNorm);
         _recordByKey.remove(prevNorm);
+        _pendingUpdates.remove(prevNorm);
         _recordedPlates.add(norm);
         _lastKey = norm;
         _latestNote[norm] = spokenNote ?? prev.notes;
@@ -447,14 +457,13 @@ class CarRecordProvider extends ChangeNotifier {
         _records[0] = updated;
         _recordByKey[norm] = updated;
         _recordsVersion++;
-      _recentRecords = _records.take(10).toList();
+        _recentRecords = _records.take(10).toList();
         notifyListeners();
 
         if (existingId != null) {
           _recordIds[norm] = existingId;
           unawaited(_dbHelper.updateCarRecord(updated));
         } else {
-          // Insert is still in flight; redirect its completion to update SQLite atomically
           for (final entry in _upgradedKeyRedirects.entries.toList()) {
             if (entry.value == prevNorm) {
               _upgradedKeyRedirects[entry.key] = norm;
@@ -474,7 +483,6 @@ class CarRecordProvider extends ChangeNotifier {
     _lastKey = norm;
     _latestNote[norm] = spokenNote ?? _stickyNote ?? '-';
 
-    // Audit & Match against Excel Sheet
     final auditLog = sortAuditProvider.processAuditPlate(
       plateData.fullPlate,
       detectedBrand: plateData.detectedBrand,
@@ -487,13 +495,12 @@ class CarRecordProvider extends ChangeNotifier {
 
     _applySlotsFromPlate(plateData);
 
-    // Instant O(1) in-memory session update - zero latency, zero frame drops!
     final location = _lastKnownLocation;
     final record = CarRecord(
       plateNumber: plateData.fullPlate,
       carType: plateData.detectedBrand != '-' ? plateData.detectedBrand : (auditLog.carType.isNotEmpty && auditLog.carType != '-' ? auditLog.carType : 'غير محدد'),
-      gpsUrl: location?.gpsUrl ?? CarRecord.buildGpsUrl(24.7136, 46.6753),
-      district: _currentDistrict.trim().isNotEmpty ? _currentDistrict.trim() : (location?.district ?? 'غير محدد'),
+      gpsUrl: location?.gpsUrl ?? '-',
+      district: _currentDistrict.trim().isNotEmpty ? _currentDistrict.trim() : (location?.district ?? 'غير متاح'),
       street: _currentStreet,
       registrationDate: DateTime.now(),
       recorderName: _recorderName.trim().isEmpty ? '-' : _recorderName.trim(),
@@ -506,7 +513,7 @@ class CarRecordProvider extends ChangeNotifier {
     _records.insert(0, record);
     _recordByKey[norm] = record;
     _recordsVersion++;
-      _recentRecords = _records.take(10).toList();
+    _recentRecords = _records.take(10).toList();
     notifyListeners();
 
     // Persist to local database in background without interrupting audio stream
@@ -514,6 +521,12 @@ class CarRecordProvider extends ChangeNotifier {
       try {
         final newId = await _dbHelper.insertCarRecord(record);
         final finalNorm = _upgradedKeyRedirects.remove(norm) ?? norm;
+        _upgradedKeyRedirects.removeWhere((_, v) => v == finalNorm);
+        // If the user already deleted the card while SQLite insert was in flight, delete the orphaned DB row
+        if (!_recordedPlates.contains(finalNorm)) {
+          await _dbHelper.deleteCarRecord(newId);
+          return;
+        }
         _recordIds[finalNorm] = newId;
         final idx = _records.indexWhere(
           (r) => ArabicVoiceNormalizer.plateKey(r.plateNumber) == finalNorm && r.id == null,
@@ -521,6 +534,9 @@ class CarRecordProvider extends ChangeNotifier {
         if (idx != -1) {
           _records[idx] = _records[idx].copyWith(id: newId);
           _recordByKey[finalNorm] = _records[idx];
+          _recordsVersion++;
+          _recentRecords = _records.take(10).toList();
+          notifyListeners();
         }
         final pending = _pendingUpdates.remove(finalNorm) ?? _pendingUpdates.remove(norm);
         if (pending != null) {
@@ -540,6 +556,7 @@ class CarRecordProvider extends ChangeNotifier {
   }
 
   Timer? _incompletePlateTimer;
+  static const Duration _threeDigitCloseDebounce = Duration(milliseconds: 350);
   VoidCallback? _pendingIncompletePlate;
 
   void _flushPendingIncompletePlate() {
@@ -564,6 +581,7 @@ class CarRecordProvider extends ChangeNotifier {
       'd4': dList.length > 3 ? dList[3] : '-',
     };
   }
+
   Timer? _aiTimer;
   static const Duration _aiDebounce = Duration(milliseconds: 250);
 
@@ -576,8 +594,8 @@ class CarRecordProvider extends ChangeNotifier {
     _aiTimer?.cancel();
     if (unparsedTail.isEmpty || !AiPlateRefiner.instance.isEnabled) return;
     final digitCount = RegExp(r'\d').allMatches(unparsedTail).length;
-    if (digitCount < 2) return;
-    final input = unparsedTail.length < rawTranscript.length ? unparsedTail : rawTranscript;
+    if (digitCount < 3) return;
+    final input = unparsedTail;
     _aiTimer = Timer(_aiDebounce, () async {
       final plates = await AiPlateRefiner.instance.refine(input);
       if (!_isListening) return;
@@ -588,7 +606,6 @@ class CarRecordProvider extends ChangeNotifier {
     });
   }
 
-  /// Process text input containing plate numbers (supports any order + brand/note)
   Future<int> processTextPlates({
     required List<String> plates,
     required ExcelSortAuditProvider sortAuditProvider,
@@ -602,9 +619,12 @@ class CarRecordProvider extends ChangeNotifier {
       final parsed = ArabicVoiceNormalizer.extractPlatesFromTranscript(trimmed, stickyNote: _stickyNote);
       if (parsed.isNotEmpty) {
         for (final p in parsed) {
-          final norm = ArabicVoiceNormalizer.plateKey(p.fullPlate);
+          final closed = p.digits.length == 3
+              ? ArabicVoiceNormalizer.finalizeThreeDigitPlate(p)
+              : p;
+          final norm = ArabicVoiceNormalizer.plateKey(closed.fullPlate);
           final alreadySeen = _recordedPlates.contains(norm);
-          _ingestPlate(p, sortAuditProvider, (plate, isMatched, model) {
+          _ingestPlate(closed, sortAuditProvider, (plate, isMatched, model) {
             if (isMatched && !alreadySeen) matchedCount++;
             onPlateAdded(plate, isMatched, model);
           });
@@ -687,15 +707,14 @@ class CarRecordProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Instant: use the cached position, refresh it in the background.
       final location = _lastKnownLocation;
       unawaited(_refreshLocation());
 
       final record = CarRecord(
         plateNumber: plateNumber.trim(),
         carType: carModel.trim().isEmpty ? 'غير محدد' : carModel.trim(),
-        gpsUrl: location?.gpsUrl ?? CarRecord.buildGpsUrl(24.7136, 46.6753),
-        district: _currentDistrict.trim().isNotEmpty ? _currentDistrict.trim() : (location?.district ?? 'غير محدد'),
+        gpsUrl: location?.gpsUrl ?? '-',
+        district: _currentDistrict.trim().isNotEmpty ? _currentDistrict.trim() : (location?.district ?? 'غير متاح'),
         street: _currentStreet,
         registrationDate: DateTime.now(),
         recorderName: (recorderName ?? _recorderName).trim().isEmpty ? '-' : (recorderName ?? _recorderName).trim(),
@@ -708,26 +727,16 @@ class CarRecordProvider extends ChangeNotifier {
       final newId = await _dbHelper.insertCarRecord(record);
       if (plateKey != null) {
         _recordIds[plateKey] = newId;
-        // A note may have been spoken while the location was being resolved.
         final latest = _latestNote[plateKey];
         if (latest != null && latest != '-' && latest != record.notes) {
           await _dbHelper.updateCarRecordNotes(newId, latest);
         }
       }
-      final recordWithId = CarRecord(
+      final recordWithId = record.copyWith(
         id: newId,
-        plateNumber: record.plateNumber,
-        carType: record.carType,
-        gpsUrl: record.gpsUrl,
-        district: record.district,
-        street: record.street,
-        registrationDate: record.registrationDate,
-        recorderName: record.recorderName,
         notes: (plateKey != null ? _latestNote[plateKey] : null) ?? record.notes,
-        isMatched: record.isMatched,
-        color: record.color,
-        owner: record.owner,
       );
+      if (plateKey != null) _recordByKey[plateKey] = recordWithId;
       _records.removeWhere((r) => r.plateNumber == record.plateNumber && r.id == null);
       _records.insert(0, recordWithId);
       _recordsVersion++;
@@ -752,8 +761,7 @@ class CarRecordProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final filePath = await _excelService.exportCarRecordsToExcel(_records);
-      return filePath;
+      return await _excelService.exportCarRecordsToExcel(_records);
     } catch (e) {
       debugPrint('Export error: $e');
       return null;
@@ -763,7 +771,6 @@ class CarRecordProvider extends ChangeNotifier {
     }
   }
 
-  
   void _persistRecordUpdate(String norm, CarRecord updated) {
     final id = _recordIds[norm] ?? updated.id;
     if (id != null) {
@@ -773,21 +780,27 @@ class CarRecordProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> _applyNoteUpdate(String key) async {
-    final id = _recordIds[key];
-    final note = _latestNote[key];
-    if (id == null || note == null) return; // applied right after the insert
-    try {
-      await _dbHelper.updateCarRecordNotes(id, note);
-      final idx = _records.indexWhere((r) => r.id == id);
-      if (idx != -1) {
-        _records[idx] = _records[idx].copyWith(notes: note);
-        _recordsVersion++;
-      _recentRecords = _records.take(10).toList();
-        notifyListeners();
-      }
-    } catch (e) {
-      debugPrint('Error updating note: $e');
+  /// Deletes a record immediately even if its SQLite background insert is still pending (`id == null`).
+  Future<void> deleteByRecord(CarRecord rec) async {
+    final key = ArabicVoiceNormalizer.plateKey(rec.plateNumber);
+    final resolvedId = rec.id ?? _recordIds[key];
+
+    _recordIds.remove(key);
+    _recordedPlates.remove(key);
+    _latestNote.remove(key);
+    _recordByKey.remove(key);
+    _pendingUpdates.remove(key);
+    if (_lastKey == key) _lastKey = null;
+
+    _records.removeWhere((r) =>
+        (resolvedId != null && r.id == resolvedId) ||
+        ArabicVoiceNormalizer.plateKey(r.plateNumber) == key);
+    _recordsVersion++;
+    _recentRecords = _records.take(10).toList();
+    notifyListeners();
+
+    if (resolvedId != null) {
+      await _dbHelper.deleteCarRecord(resolvedId);
     }
   }
 
@@ -797,6 +810,9 @@ class CarRecordProvider extends ChangeNotifier {
       _recordIds.remove(k);
       _recordedPlates.remove(k);
       _latestNote.remove(k);
+      _recordByKey.remove(k);
+      _pendingUpdates.remove(k);
+      if (_lastKey == k) _lastKey = null;
     }
     await _dbHelper.deleteCarRecord(id);
     await loadRecords();
@@ -811,8 +827,22 @@ class CarRecordProvider extends ChangeNotifier {
     _recordIds.clear();
     _latestNote.clear();
     _recordByKey.clear();
+    _pendingUpdates.clear();
     _upgradedKeyRedirects.clear();
+    _lastKey = null;
+    _lastReadPlate = '';
+    _lastReadIsWanted = false;
+    _lastMatchResult = null;
     _currentTranscript = '';
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _incompletePlateTimer?.cancel();
+    _aiTimer?.cancel();
+    _speechService.stopListening();
+    super.dispose();
   }
 }

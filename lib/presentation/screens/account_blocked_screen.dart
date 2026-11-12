@@ -2,32 +2,24 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/utils/external_actions.dart';
 import '../../core/widgets/custom_button.dart';
 import '../../data/models/user_model.dart';
 import '../providers/auth_provider.dart';
-import 'login_screen.dart';
 
 /// Account Blocked Screen (شاشة الحساب غير مفعل).
-///
-/// Shown when a user authenticates successfully but their subscription is
-/// inactive or expired. Renders the subscription window from [UserModel] and
-/// offers WhatsApp renewal plus a logout action back to the login screen.
 class AccountBlockedScreen extends StatelessWidget {
   const AccountBlockedScreen({super.key, required this.user});
 
   final UserModel user;
 
   Future<void> _openWhatsApp(BuildContext context) async {
-    final uri = Uri.parse(
-      'https://wa.me/${AppConstants.supportWhatsAppNumber}'
-      '?text=${Uri.encodeComponent(AppConstants.renewalWhatsAppMessage(user.username))}',
-    );
-
-    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final url = 'https://wa.me/${AppConstants.supportWhatsAppNumber}'
+        '?text=${Uri.encodeComponent(AppConstants.renewalWhatsAppMessage(user.username))}';
+    final launched = await ExternalActions.openUrl(url);
     if (!launched && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -40,10 +32,7 @@ class AccountBlockedScreen extends StatelessWidget {
 
   void _logout(BuildContext context) {
     context.read<AuthProvider>().logout();
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-      (route) => false,
-    );
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   @override

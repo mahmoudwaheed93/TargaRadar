@@ -5,7 +5,6 @@ import '../../core/constants/app_colors.dart';
 import '../../core/widgets/custom_button.dart';
 import '../../core/widgets/custom_text_field.dart';
 import '../providers/auth_provider.dart';
-import 'account_blocked_screen.dart';
 
 /// Login & Subscription Gate Screen (تسجيل الدخول والتحقق من الاشتراك).
 ///
@@ -53,16 +52,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
     switch (result) {
       case LoginResult.success:
-        // AuthGate watches AuthProvider.status and swaps in MainNavigationShell
-        // automatically once the Firebase session is established — no
-        // imperative navigation here (it would double-push over the gate).
-        break;
       case LoginResult.blocked:
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) => AccountBlockedScreen(user: authProvider.currentUser!),
-          ),
-        );
+        // AuthGate watches AuthProvider.status and declaratively swaps in
+        // MainNavigationShell or AccountBlockedScreen without destroying AuthGate.
         break;
       case LoginResult.error:
         // Error banner is rendered reactively via Consumer below.
@@ -153,7 +145,11 @@ class _LoginScreenState extends State<LoginScreen> {
                         onSuffixTap: () =>
                             setState(() => _obscurePassword = !_obscurePassword),
                         textInputAction: TextInputAction.done,
-                        onFieldSubmitted: (_) => _submitLogin(),
+                        onFieldSubmitted: (_) {
+                          if (!context.read<AuthProvider>().isLoading) {
+                            _submitLogin();
+                          }
+                        },
                         onChanged: (_) => context.read<AuthProvider>().clearError(),
                         validator: (value) {
                           if (value == null || value.isEmpty) {

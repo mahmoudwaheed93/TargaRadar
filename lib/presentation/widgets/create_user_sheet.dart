@@ -185,8 +185,8 @@ class _CreateUserSheetState extends State<_CreateUserSheet> {
                         setState(() => _obscurePassword = !_obscurePassword),
                     textInputAction: TextInputAction.done,
                     onChanged: (_) => provider.clearCreateError(),
-                    validator: (v) => (v == null || v.length < 4)
-                        ? 'كلمة المرور يجب أن تكون ٤ أحرف على الأقل'
+                    validator: (v) => (v == null || v.length < 6)
+                        ? 'كلمة المرور يجب أن تكون ٦ أحرف على الأقل'
                         : null,
                   ),
                   const SizedBox(height: 22),

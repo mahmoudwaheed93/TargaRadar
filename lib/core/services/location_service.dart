@@ -23,48 +23,55 @@ class LocationService {
   static final LocationService instance = LocationService._init();
   LocationService._init();
 
-  /// Determine the current position of the device and reverse geocode it
-  Future<LocationDetails?> getCurrentLocationDetails() async {
-    bool serviceEnabled;
-    LocationPermission permission;
+  final Geocoding _geocoding = Geocoding();
 
+  /// Resolves the device's real GPS position (using last-known fallback only
+  /// when a fresh fix times out). Never injects fake static city coordinates.
+  Future<LocationDetails?> getCurrentLocationDetails() async {
     try {
-      // Test if location services are enabled.
-      serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         debugPrint('Location services are disabled.');
-        return _fallbackLocation();
+        return null;
       }
 
-      permission = await Geolocator.checkPermission();
+      var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
-          debugPrint('Location permissions are denied');
-          return _fallbackLocation();
+          debugPrint('Location permissions are denied.');
+          return null;
         }
       }
 
       if (permission == LocationPermission.deniedForever) {
         debugPrint('Location permissions are permanently denied.');
-        return _fallbackLocation();
+        return null;
       }
 
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 10),
-        ),
-      );
+      Position? position;
+      try {
+        position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.medium,
+            timeLimit: Duration(seconds: 8),
+          ),
+        );
+      } catch (_) {
+        try {
+          position = await Geolocator.getLastKnownPosition();
+        } catch (_) {}
+      }
+
+      if (position == null) return null;
 
       String district = 'غير محدد';
       String street = 'غير محدد';
 
       try {
-        final placemarks = await Geocoding().placemarkFromCoordinates(
-          position.latitude,
-          position.longitude,
-        );
+        final placemarks = await _geocoding
+            .placemarkFromCoordinates(position.latitude, position.longitude)
+            .timeout(const Duration(seconds: 4));
 
         if (placemarks.isNotEmpty) {
           final place = placemarks.first;
@@ -79,7 +86,7 @@ class LocationService {
               : (place.street?.isNotEmpty == true ? place.street! : 'غير محدد');
         }
       } catch (e) {
-        debugPrint('Geocoding error: $e');
+        debugPrint('Geocoding error/timeout: $e');
       }
 
       final gpsUrl = CarRecord.buildGpsUrl(position.latitude, position.longitude);
@@ -93,19 +100,7 @@ class LocationService {
       );
     } catch (e) {
       debugPrint('Error getting location: $e');
-      return _fallbackLocation();
+      return null;
     }
-  }
-
-  LocationDetails _fallbackLocation() {
-    const lat = 24.7136; // Default fallback (e.g. Riyadh)
-    const lng = 46.6753;
-    return LocationDetails(
-      latitude: lat,
-      longitude: lng,
-      district: 'حي الملقا',
-      street: 'طريق الملك فهد',
-      gpsUrl: CarRecord.buildGpsUrl(lat, lng),
-    );
   }
 }

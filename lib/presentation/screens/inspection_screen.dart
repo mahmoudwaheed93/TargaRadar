@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/services/sound_alert_service.dart';
+import '../../core/utils/external_actions.dart';
 import '../../core/widgets/live_speech_ticker.dart';
 import '../providers/car_record_provider.dart';
 import '../providers/inspection_provider.dart';
@@ -40,14 +40,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
   }
 
   Future<void> _openMapUrl(String url) async {
-    try {
-      final uri = Uri.parse(url.trim());
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-    } catch (e) {
-      debugPrint('Error launching map url: $e');
-    }
+    await ExternalActions.openUrl(url);
   }
 
   Future<void> _pickReference(InspectionProvider insp) async {
@@ -85,10 +78,58 @@ class _InspectionScreenState extends State<InspectionScreen> {
   Future<void> _export(InspectionProvider insp) async {
     final name = context.read<CarRecordProvider>().recorderName;
     final path = await insp.exportSession(name);
+    if (!mounted) return;
     if (path == null) {
-      _snack('مفيش لوحات متسجلة للتصدير', color: AppColors.warning);
+      _snack(
+        insp.entries.isEmpty
+            ? 'مفيش لوحات متسجلة للتصدير'
+            : 'فشل تصدير ملف الإكسيل، تحقق من أذونات التخزين',
+        color: insp.entries.isEmpty ? AppColors.warning : AppColors.error,
+      );
     } else {
-      _snack('تم تصدير شيت الفحص إلى:\n$path', color: AppColors.success);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تم تصدير شيت الفحص إلى:\n$path'),
+          backgroundColor: AppColors.success,
+          action: SnackBarAction(
+            label: 'مشاركة',
+            textColor: Colors.black,
+            onPressed: () => ExternalActions.shareFile(path, text: 'تقرير الفحص - صقر المملكة'),
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _confirmClearSession(InspectionProvider insp) async {
+    if (insp.entries.isEmpty) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          backgroundColor: AppColors.cardDark,
+          title: const Text('تأكيد تصفير الفحص', style: TextStyle(color: Colors.white, fontSize: 16)),
+          content: const Text(
+            'سيتم مسح جميع اللوحات المسجلة في جلسة الفحص الحالية. هل تريد المتابعة؟',
+            style: TextStyle(color: AppColors.textSecondaryDark, fontSize: 13),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('إلغاء', style: TextStyle(color: AppColors.textSecondaryDark)),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+              child: const Text('مسح الكل', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok == true && mounted) {
+      insp.clearSession();
     }
   }
 
@@ -134,7 +175,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        e.cancelled ? 'تم إلغاء الفرزة' : 'اللوحة موجودة في الشيت — بياناتها كاملة:',
+                        e.cancelled ? 'تم إلغاء الفحص' : 'اللوحة موجودة في الشيت — بياناتها كاملة:',
                         style: TextStyle(
                           color: e.cancelled ? AppColors.error : AppColors.primary,
                           fontSize: 12,
@@ -241,7 +282,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                                 Navigator.pop(ctx);
                               },
                               icon: Icon(e.cancelled ? Icons.undo_rounded : Icons.cancel_outlined, size: 18),
-                              label: Text(e.cancelled ? 'استرجاع الفرزة' : 'إلغاء الفرزة'),
+                              label: Text(e.cancelled ? 'استرجاع الفحص' : 'إلغاء الفحص'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: e.cancelled ? AppColors.primary : AppColors.error,
                                 foregroundColor: e.cancelled ? Colors.black : Colors.white,
@@ -285,12 +326,12 @@ class _InspectionScreenState extends State<InspectionScreen> {
           IconButton(
             icon: const Icon(Icons.delete_sweep_outlined, color: AppColors.error, size: 22),
             tooltip: 'تصفير الجلسة',
-            onPressed: insp.clearSession,
+            onPressed: () => _confirmClearSession(insp),
           ),
         ],
       ),
-      body: Selector<InspectionProvider, (int, bool)>(
-        selector: (_, p) => (p.entriesVersion, _useTextInput),
+      body: Selector<InspectionProvider, (int, bool, int, bool)>(
+        selector: (_, p) => (p.entriesVersion, _useTextInput, p.refCount, p.hasReference),
         builder: (context, _, __) => CustomScrollView(
         slivers: [
           SliverToBoxAdapter(
@@ -410,7 +451,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                               onPressed: () => _toggleMic(insp),
                               icon: Icon(st.$1 ? Icons.stop_rounded : Icons.mic_rounded, size: 16),
                               label: Text(
-                                st.$1 ? 'إيقاف (${st.$2}s)' : 'مباشر • يستمع',
+                                st.$1 ? 'إيقاف (${st.$2}s)' : 'مباشر • بدء الاستماع',
                                 style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                               ),
                               style: ElevatedButton.styleFrom(
@@ -605,7 +646,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                 child: Padding(
                   padding: EdgeInsets.all(24),
                   child: Text(
-                    'ارفع الشيت، اضغط "مباشر" وقول أرقام اللوحات.\nبعد رقم اللوحة ممكن تقول "ملحوظة" وبعدها كلامك وهيتسجل مع اللوحة.\nأي لوحة موجودة في الشيت هتظهر بياناتها كاملة.',
+                    'ارفع الشيت، اضغط "مباشر" وقول أرقام اللوحات (3 حروف و 3 أو 4 أرقام).\nأي لوحة موجودة في الشيت هتظهر بياناتها كاملة.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: AppColors.textMutedDark, fontSize: 13),
                   ),

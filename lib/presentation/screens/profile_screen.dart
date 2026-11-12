@@ -10,7 +10,6 @@ import '../../core/utils/name_utils.dart';
 import '../../core/widgets/custom_button.dart';
 import '../../data/models/user_model.dart';
 import '../providers/auth_provider.dart';
-import 'login_screen.dart';
 import 'user_management_screen.dart';
 
 /// User Profile Screen (شاشة حسابي).
@@ -76,9 +75,13 @@ class _ProfileBody extends StatelessWidget {
   }
 
   void _openUserManagement(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const UserManagementScreen()),
-    );
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    } else {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const UserManagementScreen()),
+      );
+    }
   }
 
   @override
@@ -483,10 +486,10 @@ class _NoSessionView extends StatelessWidget {
               text: 'تسجيل الدخول',
               icon: Icons.login_rounded,
               width: 220,
-              onPressed: () => Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (_) => const LoginScreen()),
-                (route) => false,
-              ),
+              onPressed: () {
+                context.read<AuthProvider>().logout();
+                Navigator.of(context).popUntil((route) => route.isFirst);
+              },
             ),
           ],
         ),

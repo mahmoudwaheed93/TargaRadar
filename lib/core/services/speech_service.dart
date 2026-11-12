@@ -34,6 +34,7 @@ class SpeechService {
   Future<void> setPreferOnDevice(bool value) async {
     preferOnDeviceNotifier.value = value;
     _prefLoaded = true;
+    _platformService.updatePreferOnDevice(value);
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_prefOnDeviceKey, value);

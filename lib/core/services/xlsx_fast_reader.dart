@@ -38,6 +38,7 @@ class XlsxFastReader {
   XlsxFastReader._();
 
   static final RegExp _si = RegExp(r'<si\b[^>]*?(?:/>|>(.*?)</si>)', dotAll: true);
+  static final RegExp _rPh = RegExp(r'<rPh\b[^>]*?(?:/>|>(.*?)</rPh>)', dotAll: true);
   static final RegExp _t = RegExp(r'<t\b[^>]*?(?:/>|>(.*?)</t>)', dotAll: true);
   static final RegExp _row = RegExp(r'<row\b[^>]*?(?:/>|>(.*?)</row>)', dotAll: true);
   static final RegExp _cell = RegExp(r'<c\b([^>]*?)(?:/>|>(.*?)</c>)', dotAll: true);
@@ -45,17 +46,23 @@ class XlsxFastReader {
   static final RegExp _refAttr = RegExp(r'\br="([A-Za-z]+)(\d*)"');
   static final RegExp _typeAttr = RegExp(r'\bt="([^"]*)"');
   static final RegExp _entity = RegExp(r'&(#x[0-9a-fA-F]+|#[0-9]+|amp|lt|gt|quot|apos);');
+  static final RegExp _excelHex = RegExp(r'_x([0-9a-fA-F]{4})_');
 
   /// Reads every worksheet of the workbook (largest part first).
   static List<RawSheet> readAllSheets(Uint8List bytes) {
-    final archive = ZipDecoder().decodeBytes(bytes);
+    final Archive archive;
+    try {
+      archive = ZipDecoder().decodeBytes(bytes);
+    } catch (_) {
+      throw const FormatException('الملف غير صالح أو تالف أو بصيغة .xls قديمة — يجب اختيار ملف .xlsx سليم');
+    }
 
     ArchiveFile? sharedFile;
     final sheetFiles = <ArchiveFile>[];
     for (final f in archive.files) {
       if (!f.isFile) continue;
-      final n = f.name;
-      if (n == 'xl/sharedStrings.xml') {
+      final n = f.name.replaceAll('\\', '/').toLowerCase();
+      if (n == 'xl/sharedstrings.xml') {
         sharedFile = f;
       } else if (n.startsWith('xl/worksheets/') && n.endsWith('.xml') && !n.contains('/_rels/')) {
         sheetFiles.add(f);
@@ -68,7 +75,7 @@ class XlsxFastReader {
     sheetFiles.sort((a, b) => b.size.compareTo(a.size));
     final sheets = <RawSheet>[];
     for (final f in sheetFiles) {
-      sheets.add(RawSheet(f.name, _readSheet(_decode(f), shared)));
+      sheets.add(RawSheet(f.name.replaceAll('\\', '/'), _readSheet(_decode(f), shared)));
     }
     return sheets;
   }
@@ -81,10 +88,13 @@ class XlsxFastReader {
   static List<String> _readSharedStrings(String xml) {
     final out = <String>[];
     for (final m in _si.allMatches(xml)) {
-      final body = m.group(1);
+      var body = m.group(1);
       if (body == null || body.isEmpty) {
         out.add('');
         continue;
+      }
+      if (body.contains('<rPh')) {
+        body = body.replaceAll(_rPh, '');
       }
       final sb = StringBuffer();
       for (final t in _t.allMatches(body)) {
@@ -168,8 +178,18 @@ class XlsxFastReader {
   }
 
   static String _unescape(String s) {
-    if (!s.contains('&')) return s;
-    return s.replaceAllMapped(_entity, (m) {
+    var out = s;
+    if (out.contains('_x')) {
+      out = out.replaceAllMapped(_excelHex, (m) {
+        try {
+          return String.fromCharCode(int.parse(m.group(1)!, radix: 16));
+        } catch (_) {
+          return m.group(0)!;
+        }
+      });
+    }
+    if (!out.contains('&')) return out;
+    return out.replaceAllMapped(_entity, (m) {
       final g = m.group(1)!;
       switch (g) {
         case 'amp':

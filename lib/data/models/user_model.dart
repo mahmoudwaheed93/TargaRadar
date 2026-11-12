@@ -27,52 +27,47 @@ class UserModel {
   bool get isAdmin => role == 'admin';
 
   // التحقق هل الاشتراك ما زال سارياً أم انتهى
-  // الأدمن لا ينتهي اشتراكه أبداً — يكفي أن يكون الحساب مفعّلاً
   bool get isSubscriptionValid {
     if (!isActive) return false;
     if (isAdmin) return true;
-    // Non-admin: both dates must exist and endDate must be in the future.
     if (endDate == null) return false;
     return DateTime.now().isBefore(endDate!);
   }
 
-  // حساب الأيام المتبقية في الاشتراك
+  // حساب الأيام المتبقية في الاشتراك (بتقريب الساعات للأعلى حتى لا يظهر 0 في اليوم الأخير)
   int get remainingDays {
     if (!isSubscriptionValid) return 0;
     if (isAdmin || endDate == null) return -1; // unlimited
-    return endDate!.difference(DateTime.now()).inDays;
+    final diff = endDate!.difference(DateTime.now());
+    if (diff.isNegative) return 0;
+    return (diff.inHours / 24).ceil();
   }
 
-  /// نسبة الفترة المتبقية من الاشتراك (0.0 → 1.0) لعرضها في شريط التقدم.
-  /// تُحسب كـ (الأيام المتبقية ÷ إجمالي مدة الاشتراك)، ومحصورة بين 0 و 1.
-  /// الأدمن يعرض دائماً 1.0 (ممتلئ).
+  /// نسبة الفترة المتبقية من الاشتراك (0.0 → 1.0) بدقة المللي ثانية.
   double get subscriptionProgress {
     if (isAdmin) return 1.0;
     if (startDate == null || endDate == null) return 0.0;
-    final totalDays = endDate!.difference(startDate!).inDays;
-    if (totalDays <= 0) return 0.0;
-    final remaining = endDate!.difference(DateTime.now()).inDays;
-    return (remaining / totalDays).clamp(0.0, 1.0).toDouble();
+    final totalMs = endDate!.difference(startDate!).inMilliseconds;
+    if (totalMs <= 0) return 0.0;
+    final remainingMs = endDate!.difference(DateTime.now()).inMilliseconds;
+    return (remainingMs / totalMs).clamp(0.0, 1.0).toDouble();
   }
 
-  // تحويل البيانات القادمة من Firestore إلى UserModel
   factory UserModel.fromMap(Map<String, dynamic> map, String docId) {
     final createdAt = (map['createdAt'] as Timestamp?)?.toDate();
     return UserModel(
       uid: docId,
-      username: map['username'] ?? '',
-      role: map['role'] ?? 'user',
-      isActive: map['isActive'] ?? false,
+      username: map['username']?.toString() ?? '',
+      role: map['role']?.toString() ?? 'user',
+      isActive: map['isActive'] == true,
       startDate: (map['startDate'] as Timestamp?)?.toDate(),
       endDate: (map['endDate'] as Timestamp?)?.toDate(),
       createdAt: createdAt,
       packageName: (map['packageName'] ?? map['package'])?.toString() ?? 'اشتراك شهري',
-      lastActiveAt:
-          (map['lastActiveAt'] as Timestamp?)?.toDate() ?? createdAt,
+      lastActiveAt: (map['lastActiveAt'] as Timestamp?)?.toDate() ?? createdAt,
     );
   }
 
-  // تحويل UserModel إلى Map لرفعها إلى Firestore
   Map<String, dynamic> toMap() {
     return {
       'uid': uid,

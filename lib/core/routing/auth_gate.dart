@@ -6,6 +6,7 @@ import '../services/user_storage.dart';
 import '../../presentation/providers/auth_provider.dart';
 import '../../presentation/providers/car_record_provider.dart';
 import '../../presentation/providers/excel_sort_audit_provider.dart';
+import '../../presentation/providers/inspection_provider.dart';
 import '../../presentation/screens/account_blocked_screen.dart';
 import '../../presentation/screens/login_screen.dart';
 import '../../presentation/screens/main_navigation_shell.dart';
@@ -26,49 +27,90 @@ class AuthGate extends StatelessWidget {
           onRetry: auth.retry,
         );
       case AuthStatus.unauthenticated:
-        return const LoginScreen();
+        return const _UnauthenticatedScopeCleanup(child: LoginScreen());
       case AuthStatus.blocked:
         final user = auth.currentUser;
-        if (user == null) return const LoginScreen();
-        return AccountBlockedScreen(user: user);
+        if (user == null) return const _UnauthenticatedScopeCleanup(child: LoginScreen());
+        return _UnauthenticatedScopeCleanup(child: AccountBlockedScreen(user: user));
       case AuthStatus.authenticated:
         final user = auth.currentUser;
-        if (user != null && user.isAdmin) {
-          return const UserManagementScreen();
-        }
-        return const _AuthenticatedHome();
+        final isAdmin = user != null && user.isAdmin;
+        return _AuthenticatedHome(uid: user?.uid ?? '', isAdmin: isAdmin);
     }
   }
 }
 
+class _UnauthenticatedScopeCleanup extends StatefulWidget {
+  const _UnauthenticatedScopeCleanup({required this.child});
+  final Widget child;
+
+  @override
+  State<_UnauthenticatedScopeCleanup> createState() => _UnauthenticatedScopeCleanupState();
+}
+
+class _UnauthenticatedScopeCleanupState extends State<_UnauthenticatedScopeCleanup> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final carProv = context.read<CarRecordProvider>();
+      final inspProv = context.read<InspectionProvider>();
+      if (carProv.isListening) await carProv.stopVoiceListening();
+      if (inspProv.isListening) await inspProv.stopListening();
+      await inspProv.resetSession();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
 class _AuthenticatedHome extends StatefulWidget {
-  const _AuthenticatedHome();
+  const _AuthenticatedHome({required this.uid, required this.isAdmin});
+  final String uid;
+  final bool isAdmin;
 
   @override
   State<_AuthenticatedHome> createState() => _AuthenticatedHomeState();
 }
 
 class _AuthenticatedHomeState extends State<_AuthenticatedHome> {
+  String _scopedUid = '';
+
   @override
   void initState() {
     super.initState();
+    _syncScope();
+  }
+
+  @override
+  void didUpdateWidget(covariant _AuthenticatedHome oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.uid != widget.uid) {
+      _syncScope();
+    }
+  }
+
+  void _syncScope() {
+    final uid = widget.uid;
+    if (uid.isEmpty || uid == _scopedUid) return;
+    _scopedUid = uid;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-      final uid = context.read<AuthProvider>().currentUser?.uid;
-      if (uid != null && uid.isNotEmpty) {
-        final carProv = context.read<CarRecordProvider>();
-        final auditProv = context.read<ExcelSortAuditProvider>();
-        // Scope all providers and DB to this user
-        await carProv.setCurrentUserId(uid);
-        await auditProv.setCurrentUserId(uid);
-        await UserStorage.migrateLegacyFilesIfPresent(uid);
-      }
-      if (!mounted) return;
+      final carProv = context.read<CarRecordProvider>();
+      final auditProv = context.read<ExcelSortAuditProvider>();
+      final inspProv = context.read<InspectionProvider>();
+      await carProv.setCurrentUserId(uid);
+      await auditProv.setCurrentUserId(uid);
+      await inspProv.setCurrentUserId(uid);
+      await UserStorage.migrateLegacyFilesIfPresent(uid);
     });
   }
 
   @override
-  Widget build(BuildContext context) => const MainNavigationShell();
+  Widget build(BuildContext context) =>
+      widget.isAdmin ? const UserManagementScreen() : const MainNavigationShell();
 }
 
 class _SplashScreen extends StatelessWidget {

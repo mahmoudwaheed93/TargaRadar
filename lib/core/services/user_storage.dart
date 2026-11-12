@@ -8,18 +8,13 @@ import 'auth_service.dart';
 ///
 /// Every user-owned file (Excel exports, imports, logs, converted caches)
 /// is stored under `<appDocumentsDir>/users/<uid>/`.
-///
-/// The `uid` is read dynamically at call time from [AuthService.instance.currentUserDocId]
-/// or [AuthService.instance.currentUser?.uid]. It is never cached.
 class UserStorage {
   UserStorage._();
 
   /// Whether to delete local user data (files & SQLite rows) on logout.
-  /// Set to false by default as requested.
   static const bool deleteLocalDataOnLogout = false;
 
   /// Retrieves the current user's UID dynamically at call time.
-  /// Throws [StateError] if no user is signed in.
   static String get currentUid {
     final uid = AuthService.instance.currentUserDocId ??
         AuthService.instance.currentUser?.uid;
@@ -38,8 +33,7 @@ class UserStorage {
     }
   }
 
-  /// Base directory for the given or current user:
-  /// `<appDocumentsDir>/users/<uid>/`
+  /// Base directory for the given or current user: `<appDocumentsDir>/users/<uid>/`
   static Future<Directory> dir([String? uid]) async {
     final targetUid = uid ?? currentUid;
     final base = await getApplicationDocumentsDirectory();
@@ -50,7 +44,7 @@ class UserStorage {
     return userDirectory;
   }
 
-  /// Subdirectory inside the user's root folder (e.g. 'excel', 'converted', 'sessions').
+  /// Subdirectory inside the user's root folder.
   static Future<Directory> subDir(String subDirectoryName, [String? uid]) async {
     final userBase = await dir(uid);
     final target = Directory(p.join(userBase.path, subDirectoryName));
@@ -60,8 +54,7 @@ class UserStorage {
     return target;
   }
 
-  /// User-scoped temp directory for staged imports/picks:
-  /// `<getTemporaryDirectory>/users/<uid>/`
+  /// User-scoped temp directory: `<getTemporaryDirectory>/users/<uid>/`
   static Future<Directory> tempDir([String? uid]) async {
     final targetUid = uid ?? currentUid;
     final base = await getTemporaryDirectory();
@@ -72,14 +65,13 @@ class UserStorage {
     return target;
   }
 
-  /// Migrates legacy global files to the current user's folder safely.
-  /// Does not delete legacy files unless migration succeeds and copy is verified.
+  /// Moves legacy global files into the first signing-in user's folder cleanly
+  /// so subsequent users logging in on the same device do not inherit them.
   static Future<void> migrateLegacyFilesIfPresent(String uid) async {
     try {
       final userFolder = await dir(uid);
       final appDocs = await getApplicationDocumentsDirectory();
 
-      // Legacy files to inspect and copy
       final candidates = [
         'CarLogix_Records.xlsx',
         'CarLogix_Verification_Log.xlsx',
@@ -89,9 +81,12 @@ class UserStorage {
         final legacyFile = File(p.join(appDocs.path, fileName));
         final targetFile = File(p.join(userFolder.path, fileName));
 
-        if (await legacyFile.exists() && !await targetFile.exists()) {
-          await legacyFile.copy(targetFile.path);
-          debugPrint('[UserStorage] Migrated legacy file "$fileName" to user "$uid"');
+        if (await legacyFile.exists()) {
+          if (!await targetFile.exists()) {
+            await legacyFile.copy(targetFile.path);
+          }
+          await legacyFile.delete();
+          debugPrint('[UserStorage] Migrated and removed legacy "$fileName" for "$uid"');
         }
       }
     } catch (e) {

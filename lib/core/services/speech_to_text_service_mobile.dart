@@ -16,7 +16,11 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
   Timer? _restartTimer;
   Timer? _watchdogTimer;
 
+  DateTime _lastSpeechActivityAt = DateTime.now();
+  String _lastObservedWords = '';
   int _session = 0;
+
+  static const Duration _maxContinuousSilence = Duration(seconds: 25);
 
   @override
   int get session => _session;
@@ -24,11 +28,20 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
   @override
   bool get isListening => _wantListening;
 
-  static bool _isFatalHardwareOrPermissionError(String errorMsg) {
+  static bool _isFatalPermissionError(String errorMsg) {
     final e = errorMsg.toLowerCase();
     return e.contains('permission') ||
         e.contains('not_available') ||
-        e.contains('audio');
+        e.contains('permanently_denied');
+  }
+
+  static bool _isMissingOfflineModelError(String errorMsg) {
+    final e = errorMsg.toLowerCase();
+    return e.contains('not_supported') ||
+        e.contains('not_available') ||
+        e.contains('language') ||
+        e.contains('offline') ||
+        e.contains('download');
   }
 
   @override
@@ -41,19 +54,17 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
           debugPrint('Speech error: $msg permanent=${val.permanent}');
           if (!_wantListening) return;
 
-          // Instant fallback from on-device to Google Cloud streaming if offline pack fails
-          if (_useOnDevice) {
-            debugPrint('On-device speech unavailable, switching seamlessly to Cloud streaming.');
+          // Only fall back from offline mode if the offline model itself is missing/unsupported;
+          // never downgrade on normal silence timeouts (speech_timeout / no_match).
+          if (_useOnDevice && _isMissingOfflineModelError(msg)) {
+            debugPrint('On-device speech pack unavailable, switching to Cloud streaming.');
             _useOnDevice = false;
             _onFallbackToCloud?.call();
-            _restartSoon(delayMs: 80);
+            _restartSoon(delayMs: 60);
             return;
           }
 
-          // Only stop on genuine fatal permission/hardware errors;
-          // Android marks error_speech_timeout, error_no_match, error_busy & error_client
-          // as permanent=true, yet all of them are recoverable during continuous dictation!
-          if (_isFatalHardwareOrPermissionError(msg)) {
+          if (_isFatalPermissionError(msg)) {
             _wantListening = false;
             _watchdogTimer?.cancel();
             _onDone?.call();
@@ -61,20 +72,21 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
           }
 
           final lower = msg.toLowerCase();
-          final isBusyOrClient = lower.contains('busy') || lower.contains('client');
-          _restartSoon(delayMs: isBusyOrClient ? 180 : 60);
+          final needsBreather = lower.contains('busy') ||
+              lower.contains('client') ||
+              lower.contains('audio');
+          _restartSoon(delayMs: needsBreather ? 160 : 40);
         },
         onStatus: (val) {
           debugPrint('Speech status: $val');
           if (_wantListening && (val == 'done' || val == 'notListening')) {
-            _restartSoon(delayMs: 60);
+            _restartSoon(delayMs: 40);
           }
         },
       );
       if (_isInitialized) {
         final locales = await _speech.locales();
         final ar = locales.where((l) => l.localeId.toLowerCase().startsWith('ar')).toList();
-        // Prefer Egyptian Arabic, then Saudi, then any Arabic; else device default.
         for (final pref in ['ar_eg', 'ar-eg', 'ar_sa', 'ar-sa']) {
           final m = ar.where((l) => l.localeId.toLowerCase() == pref);
           if (m.isNotEmpty) {
@@ -99,6 +111,13 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
         _watchdogTimer?.cancel();
         return;
       }
+      // Auto-stop after 25s of continuous total silence so forgetting the mic
+      // open does not drain battery or accumulate street noise.
+      if (DateTime.now().difference(_lastSpeechActivityAt) >= _maxContinuousSilence) {
+        debugPrint('Speech watchdog: 25s continuous silence -> stopping mic.');
+        unawaited(stopListening(notifyDone: true));
+        return;
+      }
       if (!_speech.isListening && !_isStarting && !(_restartTimer?.isActive ?? false)) {
         debugPrint('Speech watchdog reviving idle recognizer');
         _listen();
@@ -106,7 +125,7 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
     });
   }
 
-  void _restartSoon({int delayMs = 60}) {
+  void _restartSoon({int delayMs = 40}) {
     if (!_wantListening || _isStarting) return;
     _restartTimer?.cancel();
     _restartTimer = Timer(Duration(milliseconds: delayMs), () {
@@ -114,8 +133,7 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
       if (!_speech.isListening) {
         _listen();
       } else {
-        // Native AudioRecord still winding down — retry shortly so the mic never dies silently
-        _restartSoon(delayMs: 100);
+        _restartSoon(delayMs: 80);
       }
     });
   }
@@ -123,7 +141,8 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
   Future<void> _listen() async {
     if (_isStarting || !_wantListening) return;
     _isStarting = true;
-    _session++;
+    final listenSession = ++_session;
+    _lastObservedWords = '';
     bool needFallback = false;
     try {
       await _speech.listen(
@@ -137,8 +156,11 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
           onDevice: _useOnDevice,
         ),
         listenFor: const Duration(hours: 1),
-        pauseFor: const Duration(seconds: 10),
+        // Short 3s silence window refreshes Google STT cleanly between cars
+        // while keeping 0ms interruption during active speech.
+        pauseFor: const Duration(seconds: 3),
         onResult: (result) {
+          if (!_wantListening) return;
           final candidates = <String>[];
           final seen = <String>{};
           if (result.recognizedWords.isNotEmpty) {
@@ -152,26 +174,34 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
             }
           }
           if (candidates.isNotEmpty) {
+            final trimmed = result.recognizedWords.trim();
+            if (trimmed.isNotEmpty && trimmed != _lastObservedWords) {
+              _lastObservedWords = trimmed;
+              _lastSpeechActivityAt = DateTime.now();
+            }
             _onResult?.call(candidates, result.finalResult);
           }
         },
       );
+      // Race guard: if user pressed Stop while _speech.listen() was awaiting bind
+      if (!_wantListening || _session != listenSession) {
+        if (_speech.isListening) {
+          await _speech.stop();
+        }
+      }
     } catch (e) {
       debugPrint('Error during speech listen: $e');
-      if (_useOnDevice) {
+      if (_useOnDevice && _isMissingOfflineModelError(e.toString())) {
         _useOnDevice = false;
         _onFallbackToCloud?.call();
-        needFallback = true;
-      } else {
-        // Recoverable listen error: let watchdog/restart recover instead of killing the mic
-        needFallback = true;
       }
+      needFallback = true;
     } finally {
       _isStarting = false;
     }
 
     if (needFallback && _wantListening) {
-      _restartSoon(delayMs: 150);
+      _restartSoon(delayMs: 120);
     }
   }
 
@@ -192,20 +222,39 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
     _onFallbackToCloud = onFallbackToCloud;
     _wantListening = true;
     _useOnDevice = preferOnDevice;
+    _lastSpeechActivityAt = DateTime.now();
     _startWatchdog();
     await _listen();
   }
 
   @override
-  Future<void> stopListening() async {
+  void updatePreferOnDevice(bool preferOnDevice) {
+    if (_useOnDevice == preferOnDevice) return;
+    _useOnDevice = preferOnDevice;
+    if (_wantListening) {
+      _restartTimer?.cancel();
+      if (_speech.isListening) {
+        _speech.stop().then((_) {
+          if (_wantListening) _restartSoon(delayMs: 40);
+        });
+      } else {
+        _restartSoon(delayMs: 40);
+      }
+    }
+  }
+
+  @override
+  Future<void> stopListening({bool notifyDone = false}) async {
     _wantListening = false;
     _isStarting = false;
+    _session++;
     _restartTimer?.cancel();
     _watchdogTimer?.cancel();
     if (_speech.isListening) {
       await _speech.stop();
     }
+    if (notifyDone) {
+      _onDone?.call();
+    }
   }
 }
-
-SpeechPlatformService getSpeechPlatformService() => MobileSpeechPlatformService();

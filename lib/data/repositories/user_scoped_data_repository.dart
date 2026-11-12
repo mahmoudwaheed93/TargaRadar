@@ -117,14 +117,18 @@ class UserScopedDataRepository {
         .toList();
   }
 
-  /// Deletes every `saved_data` item for the account (used on cache clear).
+  /// Deletes every `saved_data` item for the account in chunks of 500 (Firestore batch limit).
   Future<void> clearSavedData(String userDocId) async {
     final snap = await _savedData(userDocId).get();
-    final batch = _firestore.batch();
-    for (final doc in snap.docs) {
-      batch.delete(doc.reference);
+    if (snap.docs.isEmpty) return;
+    for (var i = 0; i < snap.docs.length; i += 500) {
+      final end = (i + 500 > snap.docs.length) ? snap.docs.length : i + 500;
+      final batch = _firestore.batch();
+      for (final doc in snap.docs.sublist(i, end)) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
     }
-    await batch.commit();
     debugPrint('[UserData] cleared ${snap.size} saved_data items');
   }
 }

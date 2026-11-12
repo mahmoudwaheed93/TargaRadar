@@ -24,6 +24,9 @@ class WebSpeechPlatformService implements SpeechPlatformService {
   }
 
   @override
+  void updatePreferOnDevice(bool preferOnDevice) {}
+
+  @override
   Future<void> stopListening() async {
     _isListening = false;
   }

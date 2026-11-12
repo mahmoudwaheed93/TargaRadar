@@ -14,6 +14,7 @@ abstract class SpeechPlatformService {
     bool preferOnDevice = false,
     VoidCallback? onFallbackToCloud,
   });
+  void updatePreferOnDevice(bool preferOnDevice);
   Future<void> stopListening();
 }
 

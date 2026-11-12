@@ -1,23 +1,12 @@
-﻿import 'dart:io';
-import 'package:excel/excel.dart';
+﻿import 'package:excel/excel.dart';
 import 'package:flutter/foundation.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import '../../data/models/car_record_model.dart';
 import '../../data/models/excel_vehicle_model.dart';
+import '../utils/external_actions.dart';
 
 class ExcelExportService {
   static final ExcelExportService instance = ExcelExportService._init();
   ExcelExportService._init();
-
-  /// Returns the Downloads directory on Android, falling back to app documents.
-  Future<Directory> _getDownloadDir() async {
-    if (!kIsWeb && Platform.isAndroid) {
-      final dir = Directory('/storage/emulated/0/Download');
-      if (await dir.exists()) return dir;
-    }
-    return await getApplicationDocumentsDirectory();
-  }
 
   /// Export list of CarRecords to an Excel (.xlsx) file
   Future<String?> exportCarRecordsToExcel(List<CarRecord> records) async {
@@ -40,16 +29,9 @@ class ExcelExportService {
       final fileBytes = excel.save();
       if (fileBytes == null) return null;
 
-      final directory = await _getDownloadDir();
-
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final fileName = 'Saqr_Al_Mamlaka_Records_$timestamp.xlsx';
-      final filePath = p.join(directory.path, fileName);
-
-      final file = File(filePath);
-      await file.writeAsBytes(fileBytes, flush: true);
-
-      return filePath;
+      return await ExternalActions.saveBytesWithFallback(fileBytes, fileName);
     } catch (e) {
       debugPrint('Error generating Excel file: $e');
       return null;
@@ -124,16 +106,9 @@ class ExcelExportService {
       final fileBytes = excel.save();
       if (fileBytes == null) return null;
 
-      final directory = await _getDownloadDir();
-
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final fileName = 'Saqr_Al_Mamlaka_الفرز_$timestamp.xlsx';
-      final filePath = p.join(directory.path, fileName);
-
-      final file = File(filePath);
-      await file.writeAsBytes(fileBytes, flush: true);
-
-      return filePath;
+      return await ExternalActions.saveBytesWithFallback(fileBytes, fileName);
     } catch (e) {
       debugPrint('Error exporting audit report: $e');
       return null;

@@ -2,10 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// A persisted summary of one sorting/comparison run, stored under
 /// `users/{docId}/saved_data` so a user sees their history after re-login.
-///
-/// Only a lightweight summary is kept (file names, chosen columns, match count,
-/// and a capped sample of matched keys) — the full row payload stays in the
-/// exported Excel file rather than bloating Firestore.
 class ComparisonHistoryEntry {
   final String? id;
   final String referenceFileName;
@@ -42,6 +38,18 @@ class ComparisonHistoryEntry {
 
   factory ComparisonHistoryEntry.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data() ?? const <String, dynamic>{};
+    final rawDate = data['createdAt'];
+    final DateTime createdAt;
+    if (rawDate is Timestamp) {
+      createdAt = rawDate.toDate();
+    } else if (rawDate is int) {
+      createdAt = DateTime.fromMillisecondsSinceEpoch(rawDate);
+    } else if (rawDate is String) {
+      createdAt = DateTime.tryParse(rawDate) ?? DateTime.now();
+    } else {
+      createdAt = DateTime.now();
+    }
+
     return ComparisonHistoryEntry(
       id: doc.id,
       referenceFileName: data['referenceFileName'] as String? ?? '',
@@ -53,7 +61,7 @@ class ComparisonHistoryEntry {
               ?.map((e) => e.toString())
               .toList() ??
           const <String>[],
-      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      createdAt: createdAt,
     );
   }
 }

@@ -1,10 +1,8 @@
-﻿import 'dart:io';
-import 'package:excel/excel.dart';
+﻿import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import '../utils/external_actions.dart';
 import 'arabic_voice_normalizer.dart';
 import 'xlsx_fast_reader.dart';
 
@@ -141,23 +139,13 @@ class ExcelTableService {
     });
   }
 
-  /// Writes an .xlsx into the Downloads folder and returns its path.
+  /// Writes an .xlsx into Downloads (or app storage fallback on Android 11-15) and returns its path.
   Future<String?> saveWorkbook(Excel excel, String prefix) async {
     try {
       final fileBytes = excel.save();
       if (fileBytes == null) return null;
-      Directory directory;
-      if (!kIsWeb && Platform.isAndroid) {
-        directory = Directory('/storage/emulated/0/Download');
-        if (!await directory.exists()) {
-          directory = await getExternalStorageDirectory() ?? await getApplicationDocumentsDirectory();
-        }
-      } else {
-        directory = await getApplicationDocumentsDirectory();
-      }
-      final path = p.join(directory.path, '${prefix}_${DateTime.now().millisecondsSinceEpoch}.xlsx');
-      await File(path).writeAsBytes(fileBytes, flush: true);
-      return path;
+      final fileName = '${prefix}_${DateTime.now().millisecondsSinceEpoch}.xlsx';
+      return await ExternalActions.saveBytesWithFallback(fileBytes, fileName);
     } catch (e) {
       debugPrint('saveWorkbook error: $e');
       return null;
@@ -267,7 +255,7 @@ ExcelTable? _tableFromRaw(List<List<String>> raw, {required bool requireHeader})
       var score = 0;
       for (final row in sample) {
         final v = row[c];
-        if (_plateLike.hasMatch(v) && RegExp(r'\d{3,4}').hasMatch(v)) score++;
+        if (_plateLike.hasMatch(v) && RegExp(r'\d{1,4}').hasMatch(v)) score++;
       }
       if (score > bestScore) {
         bestScore = score;
@@ -288,6 +276,9 @@ class _SheetPick {
 /// Reads the workbook and returns the sheet that really holds the data:
 /// the one with a plate column title and the MOST rows (a workbook may also
 /// contain a small lookup/formula sheet first, like "تشييك" next to "بيانات").
+String _friendlySheetName(String partName) =>
+    partName.replaceFirst(RegExp(r'^xl/worksheets/'), '').replaceFirst(RegExp(r'\.xml$'), '');
+
 _SheetPick _readBestTable(XlsxSource src) {
   final bytes = src.bytesSync();
   final sheets = XlsxFastReader.readAllSheets(bytes);
@@ -296,7 +287,9 @@ _SheetPick _readBestTable(XlsxSource src) {
   for (final s in sheets) {
     final t = _tableFromRaw(s.rows, requireHeader: true);
     if (t == null || t.rows.isEmpty) continue;
-    if (best == null || t.rows.length > best.table.rows.length) best = _SheetPick(s.partName, t);
+    if (best == null || t.rows.length > best.table.rows.length) {
+      best = _SheetPick(_friendlySheetName(s.partName), t);
+    }
   }
   if (best != null) return best;
 
@@ -304,7 +297,9 @@ _SheetPick _readBestTable(XlsxSource src) {
   for (final s in sheets) {
     final t = _tableFromRaw(s.rows, requireHeader: false);
     if (t == null || t.rows.isEmpty) continue;
-    if (best == null || t.rows.length > best.table.rows.length) best = _SheetPick(s.partName, t);
+    if (best == null || t.rows.length > best.table.rows.length) {
+      best = _SheetPick(_friendlySheetName(s.partName), t);
+    }
   }
   if (best == null) throw StateError('الملف فارغ أو مفيهوش بيانات');
   return best;

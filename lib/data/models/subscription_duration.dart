@@ -22,18 +22,16 @@ class SubscriptionDuration {
   final int days;
   final DateTime? specificEndDate;
 
-  /// Resolves the subscription end date relative to [startDate].
-  ///
-  /// - [DurationMode.days]: `startDate + days`.
-  /// - [DurationMode.specificDate]: the picked date at the end of that day
-  ///   (23:59:59), so the whole selected day remains valid.
+  /// Resolves the subscription end date relative to [startDate], normalized to
+  /// 23:59:59 of the final day for both modes so partial-day registrations remain consistent.
   DateTime resolveEndDate(DateTime startDate) {
+    final DateTime target;
     switch (mode) {
       case DurationMode.days:
-        return startDate.add(Duration(days: days));
+        target = startDate.add(Duration(days: days));
       case DurationMode.specificDate:
-        final picked = specificEndDate ?? startDate.add(Duration(days: days));
-        return DateTime(picked.year, picked.month, picked.day, 23, 59, 59);
+        target = specificEndDate ?? startDate.add(Duration(days: days));
     }
+    return DateTime(target.year, target.month, target.day, 23, 59, 59);
   }
 }

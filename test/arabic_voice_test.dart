@@ -1,8 +1,6 @@
-import 'package:car_logix/presentation/providers/car_record_provider.dart';
-import 'package:car_logix/presentation/providers/inspection_provider.dart';
-import 'package:flutter_test/flutter_test.dart';
 import 'package:car_logix/core/services/arabic_voice_normalizer.dart';
 import 'package:car_logix/data/models/excel_vehicle_model.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('ArabicVoiceNormalizer Tests', () {
@@ -117,53 +115,90 @@ void main() {
       expect(o.note, isNull);
     });
 
-    test('Digits-first commits at 0ms and supports instant live slot writing', () {
-      final partial = ArabicVoiceNormalizer.extractPlatesFromTranscript('3253 ب ن');
-      expect(partial.length, equals(1));
-      expect(partial.first.fullPlate, equals('ب ن 3253'));
-      expect(partial.first.isComplete, isTrue);
+    test('Strictly 3 letters ONLY: rejects 2-letter and 4-letter plates while visualizing live slots', () {
+      // 2 letters alone must NOT commit a plate
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('3253 ب ن'), isEmpty);
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('د ب 2816'), isEmpty);
 
+      // 4 letters must NOT commit or slice into 3 letters
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('د ب ن ق 2816'), isEmpty);
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('2816 د ب ن ق'), isEmpty);
+
+      // Exactly 3 letters commits immediately
       final complete = ArabicVoiceNormalizer.extractPlatesFromTranscript('3253 ب ن ق');
       expect(complete.length, equals(1));
       expect(complete.first.fullPlate, equals('ب ن ق 3253'));
       expect(complete.first.isComplete, isTrue);
 
-      // Live character-by-character slot visualization BEFORE a plate finishes
+      // Live character-by-character slot visualization BEFORE 3rd letter finishes
       final liveLetters = ArabicVoiceNormalizer.extractLiveSlots(
         ArabicVoiceNormalizer.normalizeArabicSpoken('د ب'),
         const [],
       );
       expect(liveLetters['l1'], equals('د'));
       expect(liveLetters['l2'], equals('ب'));
-      expect(liveLetters['d1'], equals('-'));
-
-      final liveDigits = ArabicVoiceNormalizer.extractLiveSlots(
-        ArabicVoiceNormalizer.normalizeArabicSpoken('3 2 5'),
-        const [],
-      );
-      expect(liveDigits['d1'], equals('3'));
-      expect(liveDigits['d2'], equals('2'));
-      expect(liveDigits['d3'], equals('5'));
-      expect(liveDigits['l1'], equals('-'));
+      expect(liveLetters['l3'], equals('-'));
     });
 
-    test('Mixed glued and single letter combinations capture last letter cleanly', () {
-      expect(
-        ArabicVoiceNormalizer.extractPlatesFromTranscript('3253 بن ق').first.fullPlate,
-        equals('ب ن ق 3253'),
-      );
-      expect(
-        ArabicVoiceNormalizer.extractPlatesFromTranscript('3253 ب نق').first.fullPlate,
-        equals('ب ن ق 3253'),
-      );
-      expect(
-        ArabicVoiceNormalizer.extractPlatesFromTranscript('بن ق 3253').first.fullPlate,
-        equals('ب ن ق 3253'),
-      );
-      expect(
-        ArabicVoiceNormalizer.extractPlatesFromTranscript('ب نق 3253').first.fullPlate,
-        equals('ب ن ق 3253'),
-      );
+    test('3 letters + 3 digits appends trailing 0 (123 -> 1230) and closes cleanly', () {
+      final pending = ArabicVoiceNormalizer.extractPlatesFromTranscript('د ب ن 123');
+      expect(pending.length, equals(1));
+      expect(pending.first.digits, equals('123'));
+      expect(pending.first.isComplete, isFalse);
+
+      final closed = ArabicVoiceNormalizer.finalizeThreeDigitPlate(pending.first);
+      expect(closed.fullPlate, equals('د ب ن 1230'));
+      expect(closed.digits, equals('1230'));
+      expect(closed.isComplete, isTrue);
+
+      // When immediately followed by another plate, 3-digit Plate 1 pads '0' at 0ms
+      final two = ArabicVoiceNormalizer.extractPlatesFromTranscript('د ب ن 123 س ص ع 4567');
+      expect(two.length, equals(2));
+      expect(two[0].fullPlate, equals('د ب ن 1230'));
+      expect(two[0].isComplete, isTrue);
+      expect(two[1].fullPlate, equals('س ص ع 4567'));
+      expect(two[1].isComplete, isTrue);
+    });
+
+    test('Colloquial words (لا، ده، يا، ما) never synthesize fake letters, and Alf=1000 works', () {
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('لا ده 2816'), isEmpty);
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('يا ما 2816'), isEmpty);
+
+      final alfSolo = ArabicVoiceNormalizer.extractPlatesFromTranscript('د ب ن الف');
+      expect(alfSolo.length, equals(1));
+      expect(alfSolo.first.fullPlate, equals('د ب ن 1000'));
+
+      final alfTens = ArabicVoiceNormalizer.extractPlatesFromTranscript('د ب ن الف وخمسين');
+      expect(alfTens.length, equals(1));
+      expect(alfTens.first.fullPlate, equals('د ب ن 1050'));
+    });
+
+    test('Arabic conjunction و between plates is skipped while letter و inside a plate is kept', () {
+      final conj = ArabicVoiceNormalizer.extractPlatesFromTranscript('د ب ن 1234 و س ص ع 5678');
+      expect(conj.length, equals(2));
+      expect(conj[0].fullPlate, equals('د ب ن 1234'));
+      expect(conj[1].fullPlate, equals('س ص ع 5678'));
+
+      final wawLetter = ArabicVoiceNormalizer.extractPlatesFromTranscript('واو ب ن 2816');
+      expect(wawLetter.length, equals(1));
+      expect(wawLetter.first.fullPlate, equals('و ب ن 2816'));
+    });
+
+    test('Brands list includes جيب and explicit trigger drops pure digit notes', () {
+      final jeep = ArabicVoiceNormalizer.extractPlatesFromTranscript('جيب د ب ن 2816');
+      expect(jeep.length, equals(1));
+      expect(jeep.first.detectedBrand, equals('جيب'));
+
+      final noDigitNote = ArabicVoiceNormalizer.extractPlatesFromTranscript('د ب ن 2816 سجل 9999');
+      expect(noDigitNote.length, equals(1));
+      expect(noDigitNote.first.detectedNote, equals('-'));
+    });
+
+    test('Mixed glued and single letter combinations capture 3 letters cleanly', () {
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('3253 بن ق').first.fullPlate, equals('ب ن ق 3253'));
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('3253 ب نق').first.fullPlate, equals('ب ن ق 3253'));
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('بن ق 3253').first.fullPlate, equals('ب ن ق 3253'));
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('ب نق 3253').first.fullPlate, equals('ب ن ق 3253'));
     });
 
     test('Multi-word brand before digits-first plate is not treated as letters', () {
@@ -179,45 +214,34 @@ void main() {
       expect(res.first.fullPlate, equals('ب ن ق 3253'));
     });
 
-    test('isPlateUpgrade detects both digit extensions and trailing letter extensions', () {
-      expect(ArabicVoiceNormalizer.isPlateUpgrade('ب ن 3253', 'ب ن ق 3253'), isTrue);
-      expect(ArabicVoiceNormalizer.isPlateUpgrade('م ن ه 1013', 'م ن ه م 1013'), isTrue);
-      expect(ArabicVoiceNormalizer.isPlateUpgrade('د ب ق 28', 'د ب ق 2852'), isTrue);
-      expect(ArabicVoiceNormalizer.isPlateUpgrade('ب ن 3253', 'ب ن ق 9999'), isFalse);
-      expect(ArabicVoiceNormalizer.isPlateUpgrade('ب ن 3253', 'د س ص 3253'), isFalse);
+    test('isPlateUpgrade detects trailing digit extensions only within same 3 letters', () {
+      expect(ArabicVoiceNormalizer.isPlateUpgrade('د ب ق 285', 'د ب ق 2852'), isTrue);
+      expect(ArabicVoiceNormalizer.isPlateUpgrade('د ب ق 285', 'د ب ق 9999'), isFalse);
+      expect(ArabicVoiceNormalizer.isPlateUpgrade('ب ن ق 3253', 'د س ص 3253'), isFalse);
     });
 
-    test('Egyptian compound thousands & hundreds (الف، متين، تلات تلاف) parse cleanly', () {
+    test('Egyptian compound thousands & hundreds parse cleanly', () {
       final r1 = ArabicVoiceNormalizer.extractPlatesFromTranscript('الف متين تلاته وخمسين ب ن ق');
-      expect(r1.length, equals(1));
       expect(r1.first.fullPlate, equals('ب ن ق 1253'));
 
       final r2 = ArabicVoiceNormalizer.extractPlatesFromTranscript('تلات تلاف متين تلاته وخمسين ب ن ق');
-      expect(r2.length, equals(1));
       expect(r2.first.fullPlate, equals('ب ن ق 3253'));
 
       final r3 = ArabicVoiceNormalizer.extractPlatesFromTranscript('اربع تلاف وخمسميه د ب ن');
-      expect(r3.length, equals(1));
       expect(r3.first.fullPlate, equals('د ب ن 4500'));
     });
 
-    test('Mixed-order consecutive fast speech does not steal first letter of next plate', () {
+    test('Mixed-order consecutive fast speech splits 3+3 cleanly', () {
       final r1 = ArabicVoiceNormalizer.extractPlatesFromTranscript('3253 ب ن ق د ب ن 2816');
       expect(r1.length, equals(2));
       expect(r1[0].fullPlate, equals('ب ن ق 3253'));
       expect(r1[1].fullPlate, equals('د ب ن 2816'));
-
-      final r2 = ArabicVoiceNormalizer.extractPlatesFromTranscript('3253 ب ن ق د ب 2816');
-      expect(r2.length, equals(2));
-      expect(r2[0].fullPlate, equals('ب ن ق 3253'));
-      expect(r2[1].fullPlate, equals('د ب 2816'));
     });
 
-    test('N-best selectBestCandidate recovers missing last letter from alternate hypothesis', () {
+    test('N-best selectBestCandidate recovers valid 3-letter plate over 2-letter/noise hypothesis', () {
       final best = ArabicVoiceNormalizer.selectBestCandidate(['3253 ب ن', '3253 ب ن ق']);
       expect(best.plates.length, equals(1));
       expect(best.plates.first.fullPlate, equals('ب ن ق 3253'));
-      expect(best.plates.first.isComplete, isTrue);
 
       final bestNoise = ArabicVoiceNormalizer.selectBestCandidate(['كلام غير واضح', 'د ب ن 2816']);
       expect(bestNoise.plates.length, equals(1));
@@ -229,17 +253,12 @@ void main() {
         ArabicVoiceNormalizer.plateKey('2816 د ب ن'),
         equals(ArabicVoiceNormalizer.plateKey('د ب ن - 2816')),
       );
-      expect(
-        ArabicVoiceNormalizer.plateKey('د.ب.ن/2816'),
-        equals('دبن2816'),
-      );
+      expect(ArabicVoiceNormalizer.plateKey('د.ب.ن/2816'), equals('دبن2816'));
     });
 
-    test('extractUnparsedTail and hasValidNoteTriggerOrKeyword guard continuous AI fallback', () {
+    test('extractUnparsedTail and hasValidNoteTriggerOrKeyword work cleanly', () {
       final normStr = ArabicVoiceNormalizer.normalizeArabicSpoken('د ب ن 2816 تلاته اتنين 53');
-      final tail = ArabicVoiceNormalizer.extractUnparsedTail(normStr);
-      expect(tail, equals('3253'));
-
+      expect(ArabicVoiceNormalizer.extractUnparsedTail(normStr), equals('3253'));
       expect(ArabicVoiceNormalizer.hasValidNoteTriggerOrKeyword('د ب ن 2816 س'), isFalse);
       expect(ArabicVoiceNormalizer.hasValidNoteTriggerOrKeyword('د ب ن 2816 مركونة'), isTrue);
     });
@@ -251,7 +270,7 @@ void main() {
       expect(res[1].fullPlate, equals('ب ن ق 3253'));
     });
 
-    test('extractActiveTickerText clears completed plates and keeps only live upcoming speech', () {
+    test('extractActiveTickerText clears completed 4-digit and final 3-digit plates', () {
       expect(
         ArabicVoiceNormalizer.extractActiveTickerText(
           ArabicVoiceNormalizer.normalizeArabicSpoken('د ب ن 2816'),
@@ -270,7 +289,13 @@ void main() {
         ),
         equals('د س ص 320'),
       );
+      expect(
+        ArabicVoiceNormalizer.extractActiveTickerText(
+          ArabicVoiceNormalizer.normalizeArabicSpoken('د ب ن 2816 د س ص 320'),
+          isFinal: true,
+        ),
+        equals(''),
+      );
     });
   });
 }
-

@@ -63,8 +63,8 @@ class CarRecord {
       id: map['id'] as int?,
       plateNumber: map['plate_number'] as String? ?? '',
       gpsUrl: map['gps_url'] as String? ?? '',
-      registrationDate: map['registration_date'] != null
-          ? DateTime.parse(map['registration_date'] as String)
+      registrationDate: map['registration_date'] is String
+          ? (DateTime.tryParse(map['registration_date'] as String) ?? DateTime.now())
           : DateTime.now(),
       district: map['district'] as String? ?? '',
       street: map['street'] as String? ?? '',

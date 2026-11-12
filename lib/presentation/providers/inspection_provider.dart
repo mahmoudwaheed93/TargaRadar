@@ -1,14 +1,14 @@
-import '../../core/services/location_service.dart';
-import '../../data/models/excel_vehicle_model.dart';
-import '../../core/utils/date_formatter.dart';
 import 'dart:async';
 import 'package:excel/excel.dart';
 import 'package:flutter/foundation.dart';
 import '../../core/services/ai_plate_refiner.dart';
 import '../../core/services/arabic_voice_normalizer.dart';
 import '../../core/services/excel_table_service.dart';
+import '../../core/services/location_service.dart';
 import '../../core/services/sound_alert_service.dart';
 import '../../core/services/speech_service.dart';
+import '../../core/utils/date_formatter.dart';
+import '../../data/models/excel_vehicle_model.dart';
 
 /// One plate heard during an inspection session.
 class InspectionEntry {
@@ -17,7 +17,7 @@ class InspectionEntry {
   final String key;
   final String time;
   final bool inSheet;
-  final Map<String, String> rowData; // full row from the reference sheet
+  final Map<String, String> rowData;
   final String note;
   final bool cancelled;
   final String gpsUrl;
@@ -47,14 +47,12 @@ class InspectionEntry {
       );
 }
 
-/// Inspection ("الفحص"): a big reference sheet is loaded once; every plate that
-/// is spoken goes into a NEW session list (exported as a new Excel). If the
-/// plate exists in the reference sheet its whole row is shown and the
-/// inspection of that plate can be cancelled.
+/// Inspection ("الفحص"): plates-only live lookup against a large reference sheet.
 class InspectionProvider extends ChangeNotifier {
   final SpeechService _speech = SpeechService.instance;
   final ExcelTableService _tables = ExcelTableService.instance;
 
+  String _currentUserId = '';
   ExcelTable? _table;
   final Map<String, int> _index = {};
   String _refFileName = '';
@@ -70,26 +68,10 @@ class InspectionProvider extends ChangeNotifier {
   bool _locRefreshing = false;
   DateTime? _locAt;
 
-  Future<void> _refreshLocation() async {
-    if (_locRefreshing) return;
-    final at = _locAt;
-    if (at != null && DateTime.now().difference(at).inSeconds < 60) return;
-    _locRefreshing = true;
-    try {
-      final l = await LocationService.instance.getCurrentLocationDetails();
-      if (l != null) {
-        _lastKnownLocation = l;
-        _locAt = DateTime.now();
-      }
-    } catch (e) {
-      debugPrint('Location refresh error in inspection: $e');
-    } finally {
-      _locRefreshing = false;
-    }
-  }
   Timer? _incompletePlateTimer;
   Timer? _aiTimer;
   static const Duration _aiDebounce = Duration(milliseconds: 250);
+  static const Duration _threeDigitCloseDebounce = Duration(milliseconds: 350);
   VoidCallback? _pendingIncompletePlate;
   DateTime? _lastIngestedAt;
   String _lastProcessedTranscript = '';
@@ -98,15 +80,7 @@ class InspectionProvider extends ChangeNotifier {
   int _entriesVersion = 0;
   int get entriesVersion => _entriesVersion;
 
-  void _flushPendingIncompletePlate() {
-    _incompletePlateTimer?.cancel();
-    final flush = _pendingIncompletePlate;
-    _pendingIncompletePlate = null;
-    if (flush != null) flush();
-  }
   String? _lastKey;
-  int _orphanSession = -1;
-  String? _orphanTarget;
   Map<String, String> _slots = {
     'l1': '-', 'l2': '-', 'l3': '-', 'd1': '-', 'd2': '-', 'd3': '-', 'd4': '-',
   };
@@ -126,7 +100,56 @@ class InspectionProvider extends ChangeNotifier {
   int get notFoundCount => _entries.where((e) => !e.inSheet && !e.cancelled).length;
   int get cancelledCount => _entries.where((e) => e.cancelled).length;
 
-  /// Browse the phone for the big reference sheet and load it.
+  /// Scopes in-memory inspection session to the signed-in user so switching accounts
+  /// never leaks the previous user's reference table or inspection records.
+  Future<void> setCurrentUserId(String uid) async {
+    if (_currentUserId == uid) return;
+    _currentUserId = uid;
+    await resetSession();
+  }
+
+  Future<void> resetSession() async {
+    if (_isListening) await stopListening();
+    _table = null;
+    _index.clear();
+    _refFileName = '';
+    _error = null;
+    _entries.clear();
+    _seen.clear();
+    _lastKey = null;
+    _lastIngestedAt = null;
+    _lastProcessedTranscript = '';
+    _currentTranscript = '';
+    _slots = {'l1': '-', 'l2': '-', 'l3': '-', 'd1': '-', 'd2': '-', 'd3': '-', 'd4': '-'};
+    _entriesVersion++;
+    notifyListeners();
+  }
+
+  Future<void> _refreshLocation() async {
+    if (_locRefreshing) return;
+    final at = _locAt;
+    if (at != null && DateTime.now().difference(at).inSeconds < 60) return;
+    _locRefreshing = true;
+    try {
+      final l = await LocationService.instance.getCurrentLocationDetails();
+      if (l != null) {
+        _lastKnownLocation = l;
+        _locAt = DateTime.now();
+      }
+    } catch (e) {
+      debugPrint('Location refresh error in inspection: $e');
+    } finally {
+      _locRefreshing = false;
+    }
+  }
+
+  void _flushPendingIncompletePlate() {
+    _incompletePlateTimer?.cancel();
+    final flush = _pendingIncompletePlate;
+    _pendingIncompletePlate = null;
+    if (flush != null) flush();
+  }
+
   Future<bool> pickReferenceFile() async {
     _loadingFile = true;
     _error = null;
@@ -134,7 +157,6 @@ class InspectionProvider extends ChangeNotifier {
     try {
       final picked = await _tables.pickExcelFile();
       if (picked == null) return false;
-      // Heavy files are read by a worker isolate straight from disk.
       final table = await _tables.parse(picked);
       if (table.rows.isEmpty) {
         _error = 'الملف فارغ أو غير متوافق (لازم يكون .xlsx وفيه عمود لرقم اللوحة)';
@@ -147,7 +169,6 @@ class InspectionProvider extends ChangeNotifier {
         final k = ArabicVoiceNormalizer.plateKey(table.rows[i][table.plateCol]);
         if (k.isNotEmpty) _index.putIfAbsent(k, () => i);
       }
-      // Re-check plates already heard against the newly loaded sheet.
       for (int i = 0; i < _entries.length; i++) {
         final e = _entries[i];
         final row = _rowFor(e.key);
@@ -163,6 +184,7 @@ class InspectionProvider extends ChangeNotifier {
           gpsUrl: e.gpsUrl,
         );
       }
+      _entriesVersion++;
       return true;
     } catch (e) {
       _error = 'خطأ أثناء قراءة الملف: $e';
@@ -182,54 +204,22 @@ class InspectionProvider extends ChangeNotifier {
     final data = <String, String>{};
     for (int c = 0; c < t.headers.length; c++) {
       var h = t.headers[c].isEmpty ? 'عمود ${c + 1}' : t.headers[c];
-      if (data.containsKey(h)) h = '$h (${c + 1})'; // keep one value per column
+      if (data.containsKey(h)) h = '$h (${c + 1})';
       data[h] = row[c];
     }
     return data;
   }
 
-  /// A note spoken alone ("ملحوظة ...") goes to the plate heard just before.
-  void _handleOrphanNote(String? note, int session) {
-    if (note == null) return;
-    _handleOrphanData(OrphanVoiceData(note: note), session);
-  }
-
-  void _handleOrphanData(OrphanVoiceData data, int session) {
-    if (!data.hasData || _entries.isEmpty) return;
-    final note = data.note;
-    if (note != null && note != '-' && note.isNotEmpty) {
-      if (session != _orphanSession) {
-        _orphanSession = session;
-        _orphanTarget = _lastKey;
-      }
-      final key = _orphanTarget ?? _lastKey;
-      if (key == null) return;
-      final i = _entries.indexWhere((e) => e.key == key);
-      if (i != -1 && _entries[i].note != note) {
-        _entries[i] = _entries[i].copyWith(note: note);
-        _entriesVersion++;
-        notifyListeners();
-      }
-    }
-  }
-
-  
   void _ingestInspectionPlate(ParsedPlateData p, void Function(InspectionEntry entry) onMatch) {
     final key = ArabicVoiceNormalizer.plateKey(p.fullPlate);
-    // In Inspection mode, inspectors only speak plate numbers. Never record voice notes.
-    const note = '';
+    if (key.isEmpty) return;
 
     if (_seen.contains(key)) {
-      // The note is spoken after the plate -> goes to the note only.
-      final i = _entries.indexWhere((e) => e.key == key);
-      if (i != -1 && note.isNotEmpty && _entries[i].note != note) {
-        _entries[i] = _entries[i].copyWith(note: note);
-        notifyListeners();
-      }
+      _lastKey = key;
+      _lastIngestedAt = DateTime.now();
       return;
     }
 
-    // In-place upgrade defense: handles both digit extensions and trailing letter extensions
     if (_entries.isNotEmpty &&
         _lastIngestedAt != null &&
         DateTime.now().difference(_lastIngestedAt!).inSeconds <= 5) {
@@ -247,7 +237,7 @@ class InspectionProvider extends ChangeNotifier {
           time: prev.time,
           inSheet: row != null,
           rowData: row ?? const {},
-          note: note.isNotEmpty ? note : prev.note,
+          note: '',
           gpsUrl: prev.gpsUrl,
         );
         _entries[0] = updated;
@@ -265,13 +255,13 @@ class InspectionProvider extends ChangeNotifier {
     final row = _rowFor(key);
     final now = DateTime.now();
     final entry = InspectionEntry(
-      id: 'insp-${now.microsecondsSinceEpoch}',
+      id: 'insp-${now.microsecondsSinceEpoch}-$key',
       plate: p.fullPlate,
       key: key,
       time: AppDateFormatter.time12(now),
       inSheet: row != null,
       rowData: row ?? const {},
-      note: note,
+      note: '',
       gpsUrl: _lastKnownLocation?.gpsUrl ?? '',
     );
     _entries.insert(0, entry);
@@ -284,9 +274,9 @@ class InspectionProvider extends ChangeNotifier {
     unawaited(_refreshLocation());
     unawaited(SoundAlertService.instance.warmUp());
     if (_isListening) return;
-    _orphanSession = -1;
     _isListening = true;
     _currentTranscript = '';
+    _lastProcessedTranscript = '';
     _timer = 0;
     _ticker?.cancel();
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -296,35 +286,41 @@ class InspectionProvider extends ChangeNotifier {
     notifyListeners();
 
     await _speech.startListening(
-      onOrphanNote: _handleOrphanNote,
-      onOrphanData: _handleOrphanData,
+      // Inspection mode strictly tracks plates only (never voice notes)
       onResult: (raw, plates, slots, normalized, isFinal) {
         if (raw.length < _lastProcessedTranscript.length) {
           _lastProcessedTranscript = '';
         }
         if (raw == _lastProcessedTranscript && !isFinal) return;
         _lastProcessedTranscript = isFinal ? '' : raw;
-        _currentTranscript = ArabicVoiceNormalizer.extractActiveTickerText(normalized);
+        _currentTranscript = ArabicVoiceNormalizer.extractActiveTickerText(normalized, isFinal: isFinal);
         if (slots.isNotEmpty) {
           _slots = slots;
         }
 
-        // 1. Process all completed plates immediately (0ms wait)
+        // 1. Immediate commit for finished 4-digit plates
         final completePlates = plates.where((p) => p.isComplete).toList();
         for (final p in completePlates) {
           _ingestInspectionPlate(p, onMatch);
         }
 
-        // 2. Debounce trailing incomplete plate: flush immediately on isFinal, else 550ms
+        // 2. Trailing 3-digit plate: wait 350ms for optional 4th digit; else pad '0' & close
         _incompletePlateTimer?.cancel();
         _pendingIncompletePlate = null;
         if (plates.isNotEmpty && !plates.last.isComplete) {
           final pending = plates.last;
+          void commitThreeDigit() {
+            final closed = ArabicVoiceNormalizer.finalizeThreeDigitPlate(pending);
+            _ingestInspectionPlate(closed, onMatch);
+            _slots = ArabicVoiceNormalizer.extractSlotsFromPlates([closed]);
+            _currentTranscript = '';
+          }
+
           if (isFinal) {
-            _ingestInspectionPlate(pending, onMatch);
+            commitThreeDigit();
           } else {
-            _pendingIncompletePlate = () => _ingestInspectionPlate(pending, onMatch);
-            _incompletePlateTimer = Timer(const Duration(milliseconds: 200), () {
+            _pendingIncompletePlate = commitThreeDigit;
+            _incompletePlateTimer = Timer(_threeDigitCloseDebounce, () {
               final flush = _pendingIncompletePlate;
               _pendingIncompletePlate = null;
               if (!_isListening || flush == null) return;
@@ -334,7 +330,7 @@ class InspectionProvider extends ChangeNotifier {
           }
         }
 
-        // 3. Fast AI fallback for unparsed noisy speech tail
+        // 3. Fast AI fallback strictly on the unparsed speech tail
         final unparsedTail = ArabicVoiceNormalizer.extractUnparsedTail(normalized);
         _scheduleAiFallback(raw, unparsedTail, onMatch);
 
@@ -349,7 +345,7 @@ class InspectionProvider extends ChangeNotifier {
     );
   }
 
-  /// Process text input containing plate numbers (supports any order or glued format)
+  /// Process text input containing plate numbers (supports 3-digit -> '0' padding)
   int processTextPlates(List<String> plates, {required void Function(InspectionEntry entry) onMatch}) {
     int matchedCount = 0;
     for (final raw in plates) {
@@ -359,9 +355,12 @@ class InspectionProvider extends ChangeNotifier {
       final parsed = ArabicVoiceNormalizer.extractPlatesFromTranscript(trimmed);
       if (parsed.isNotEmpty) {
         for (final p in parsed) {
-          final k = ArabicVoiceNormalizer.plateKey(p.fullPlate);
+          final closed = p.digits.length == 3
+              ? ArabicVoiceNormalizer.finalizeThreeDigitPlate(p)
+              : p;
+          final k = ArabicVoiceNormalizer.plateKey(closed.fullPlate);
           final wasSeen = _seen.contains(k);
-          _ingestInspectionPlate(p, (entry) {
+          _ingestInspectionPlate(closed, (entry) {
             if (!wasSeen) matchedCount++;
             onMatch(entry);
           });
@@ -389,7 +388,7 @@ class InspectionProvider extends ChangeNotifier {
         gpsUrl: _lastKnownLocation?.gpsUrl ?? '',
       );
       _entries.insert(0, entry);
-    _entriesVersion++;
+      _entriesVersion++;
       if (entry.inSheet) {
         matchedCount++;
         onMatch(entry);
@@ -398,6 +397,7 @@ class InspectionProvider extends ChangeNotifier {
     notifyListeners();
     return matchedCount;
   }
+
   void _scheduleAiFallback(
     String rawTranscript,
     String unparsedTail,
@@ -406,8 +406,8 @@ class InspectionProvider extends ChangeNotifier {
     _aiTimer?.cancel();
     if (unparsedTail.isEmpty || !AiPlateRefiner.instance.isEnabled) return;
     final digitCount = RegExp(r'\d').allMatches(unparsedTail).length;
-    if (digitCount < 2) return;
-    final input = unparsedTail.length < rawTranscript.length ? unparsedTail : rawTranscript;
+    if (digitCount < 3) return;
+    final input = unparsedTail;
     _aiTimer = Timer(_aiDebounce, () async {
       final plates = await AiPlateRefiner.instance.refine(input);
       if (!_isListening) return;
@@ -428,7 +428,6 @@ class InspectionProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// "كنسل الفرزة" — the plate stays visible but is excluded from the export.
   void setCancelled(String id, bool cancelled) {
     final i = _entries.indexWhere((e) => e.id == id);
     if (i == -1) return;
@@ -440,22 +439,27 @@ class InspectionProvider extends ChangeNotifier {
   void removeEntry(String id) {
     final i = _entries.indexWhere((e) => e.id == id);
     if (i == -1) return;
-    _seen.remove(_entries[i].key);
+    final removedKey = _entries[i].key;
+    _seen.remove(removedKey);
     _entries.removeAt(i);
+    if (_lastKey == removedKey) {
+      _lastKey = _entries.isNotEmpty ? _entries.first.key : null;
+      if (_entries.isEmpty) _lastIngestedAt = null;
+    }
     _entriesVersion++;
     notifyListeners();
   }
 
   void clearSession() {
     _entries.clear();
-    _entriesVersion++;
     _seen.clear();
+    _lastKey = null;
+    _lastIngestedAt = null;
     _currentTranscript = '';
+    _entriesVersion++;
     notifyListeners();
   }
 
-  /// Writes the session into a NEW Excel file. Plates found in the reference
-  /// sheet carry all of their original columns.
   Future<String?> exportSession(String recorderName) async {
     final active = _entries.where((e) => !e.cancelled).toList().reversed.toList();
     if (_entries.isEmpty) return null;
@@ -466,7 +470,6 @@ class InspectionProvider extends ChangeNotifier {
     if (def != null) excel.rename(def, name);
     final ws = excel[name];
 
-    // Reference sheet headers + Location + Standard columns
     final extraHeaders = _table?.headers ?? const [];
     final headers = <CellValue>[
       TextCellValue('م'),
@@ -483,8 +486,6 @@ class InspectionProvider extends ChangeNotifier {
 
     for (int i = 0; i < active.length; i++) {
       final e = active[i];
-
-      // Retrieve location URL: live GPS or from reference sheet rowData
       String locUrl = e.gpsUrl;
       if (locUrl.isEmpty) {
         for (final entry in e.rowData.entries) {
@@ -541,6 +542,9 @@ class InspectionProvider extends ChangeNotifier {
   @override
   void dispose() {
     _ticker?.cancel();
+    _incompletePlateTimer?.cancel();
+    _aiTimer?.cancel();
+    _speech.stopListening();
     super.dispose();
   }
 }

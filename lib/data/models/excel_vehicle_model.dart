@@ -69,18 +69,18 @@ class ExcelVehicleItem {
 
   factory ExcelVehicleItem.fromJson(Map<String, dynamic> json) {
     return ExcelVehicleItem(
-      id: json['id'] as String? ?? '',
-      rawPlate: json['rawPlate'] as String? ?? '',
-      normalizedPlate: json['normalizedPlate'] as String? ?? '',
-      carType: json['carType'] as String? ?? '-',
-      color: json['color'] as String? ?? '-',
-      owner: json['owner'] as String? ?? '-',
-      notes: json['notes'] as String? ?? '-',
-      otherFields: json['otherFields'] != null
+      id: json['id']?.toString() ?? '',
+      rawPlate: json['rawPlate']?.toString() ?? '',
+      normalizedPlate: json['normalizedPlate']?.toString() ?? '',
+      carType: json['carType']?.toString() ?? '-',
+      color: json['color']?.toString() ?? '-',
+      owner: json['owner']?.toString() ?? '-',
+      notes: json['notes']?.toString() ?? '-',
+      otherFields: json['otherFields'] is Map
           ? (json['otherFields'] as Map).map((k, v) => MapEntry(k.toString(), v?.toString() ?? ''))
           : const {},
-      isAudited: json['isAudited'] as bool? ?? false,
-      auditedAt: json['auditedAt'] as String?,
+      isAudited: json['isAudited'] == true,
+      auditedAt: json['auditedAt']?.toString(),
     );
   }
 }
@@ -131,17 +131,17 @@ class AuditedLogItem {
 
   factory AuditedLogItem.fromJson(Map<String, dynamic> json) {
     return AuditedLogItem(
-      id: json['id'] as String? ?? '',
-      seqNumber: json['seqNumber'] as int? ?? 1,
-      plateNumber: json['plateNumber'] as String? ?? '',
-      normalizedPlate: json['normalizedPlate'] as String? ?? '',
-      isMatched: json['isMatched'] as bool? ?? false,
-      carType: json['carType'] as String? ?? '-',
-      color: json['color'] as String? ?? '-',
-      owner: json['owner'] as String? ?? '-',
-      notes: json['notes'] as String? ?? '-',
-      timestamp: json['timestamp'] as String? ?? '',
-      otherFields: json['otherFields'] != null
+      id: json['id']?.toString() ?? '',
+      seqNumber: (json['seqNumber'] as num?)?.toInt() ?? 1,
+      plateNumber: json['plateNumber']?.toString() ?? '',
+      normalizedPlate: json['normalizedPlate']?.toString() ?? '',
+      isMatched: json['isMatched'] == true,
+      carType: json['carType']?.toString() ?? '-',
+      color: json['color']?.toString() ?? '-',
+      owner: json['owner']?.toString() ?? '-',
+      notes: json['notes']?.toString() ?? '-',
+      timestamp: json['timestamp']?.toString() ?? '',
+      otherFields: json['otherFields'] is Map
           ? (json['otherFields'] as Map).map((k, v) => MapEntry(k.toString(), v?.toString() ?? ''))
           : const {},
     );
@@ -166,7 +166,6 @@ class ParsedPlateData {
     this.isComplete = true,
   });
 }
-
 
 /// Standalone car brand and/or note spoken without a plate
 class OrphanVoiceData {
