@@ -161,13 +161,13 @@ class ArabicVoiceNormalizer {
 
   static final List<MapEntry<RegExp, int>> numTeens = [
     MapEntry(RegExp(_w('(?:و\\s*)?(?:تسعتاشر|تسع[هة]?\\s*عشر)')), 19),
-    MapEntry(RegExp(_w('(?:و\\s*)?(?:تمانتاشر|تمنتاشر|ثماني[هة]?\\s*عشر)')), 18),
+    MapEntry(RegExp(_w('(?:و\\s*)?(?:تمانتاشر|تمنتاشر|تماني[هة]?\\s*عشر|ثماني[هة]?\\s*عشر)')), 18),
     MapEntry(RegExp(_w('(?:و\\s*)?(?:سبعتاشر|سبع[هة]?\\s*عشر)')), 17),
     MapEntry(RegExp(_w('(?:و\\s*)?(?:ستاشر|ست[هة]?\\s*عشر)')), 16),
     MapEntry(RegExp(_w('(?:و\\s*)?(?:خمستاشر|خمس[هة]?\\s*عشر)')), 15),
     MapEntry(RegExp(_w('(?:و\\s*)?(?:اربعتاشر|اربع[هة]?\\s*عشر)')), 14),
-    MapEntry(RegExp(_w('(?:و\\s*)?(?:تلاتاشر|تلتاشر|ثلاث[هة]?\\s*عشر)')), 13),
-    MapEntry(RegExp(_w('(?:و\\s*)?(?:اتناشر|اثنا\\s*عشر|اثناعشر)')), 12),
+    MapEntry(RegExp(_w('(?:و\\s*)?(?:تلاتاشر|تلتاشر|تلت\\s*عشر|تلات[هة]?\\s*عشر|ثلاث[هة]?\\s*عشر)')), 13),
+    MapEntry(RegExp(_w('(?:و\\s*)?(?:اتناشر|اتنا\\s*عشر|اثنا\\s*عشر|اثناعشر)')), 12),
     MapEntry(RegExp(_w('(?:و\\s*)?(?:حداشر|احداشر|احد\\s*عشر)')), 11),
     MapEntry(RegExp(_w('(?:و\\s*)?(?:عشر[هة]|عشر)')), 10),
   ];
@@ -192,9 +192,9 @@ class ArabicVoiceNormalizer {
     const MapEntry('ست[هة]?', 6),
     const MapEntry('خمس[هة]?', 5),
     const MapEntry('اربع[هة]?', 4),
-    const MapEntry('تلات[هة]?|ثلاث[هة]?', 3),
-    const MapEntry('اتنين|اثنين|اتنان|اثنان', 2),
-    const MapEntry('واحد', 1),
+    const MapEntry('تلت|تلات[هة]?|ثلاث[هة]?', 3),
+    const MapEntry('تنين|ثنتين|اتنين|اثنين|اتنان|اثنان', 2),
+    const MapEntry('وحد|واحد[هة]?', 1),
   ];
 
   static final List<MapEntry<RegExp, String>> arNumRules = _initNumRules();
@@ -233,9 +233,9 @@ class ArabicVoiceNormalizer {
     // 6. Units (0 - 9)
     rules.addAll([
       MapEntry(RegExp(_w('(?:و\\s*)?(?:صفر|زيرو)')), '0'),
-      MapEntry(RegExp(_w('(?:و\\s*)?واحد')), '1'),
-      MapEntry(RegExp(_w('(?:و\\s*)?(?:اثنين|اتنين|اثنان|اتنان)')), '2'),
-      MapEntry(RegExp(_w('(?:و\\s*)?(?:ثلاث[هة]?|تلات[هة]?)')), '3'),
+      MapEntry(RegExp(_w('(?:و\\s*)?(?:وحد|واحد[هة]?)')), '1'),
+      MapEntry(RegExp(_w('(?:و\\s*)?(?:تنين|ثنتين|اثنين|اتنين|اثنان|اتنان)')), '2'),
+      MapEntry(RegExp(_w('(?:و\\s*)?(?:تلت|ثلاث[هة]?|تلات[هة]?)')), '3'),
       MapEntry(RegExp(_w('(?:و\\s*)?اربع[هة]?')), '4'),
       MapEntry(RegExp(_w('(?:و\\s*)?خمس[هة]?')), '5'),
       MapEntry(RegExp(_w('(?:و\\s*)?ست[هة]?')), '6'),
@@ -247,38 +247,36 @@ class ArabicVoiceNormalizer {
     return rules;
   }
 
-  /// Canonical spoken letter names (excludes Egyptian everyday words like ده، لا، يا، ما، تا)
+  /// Canonical & multi-dialect spoken letter names (Egyptian, Sa'idi, Bedouin, Gulf, Levantine)
   static final List<MapEntry<RegExp, String>> arLetterNames = [
     // Common fast/far-field ASR collapses for whole 3-letter combinations
     MapEntry(RegExp(_w('الراعين|اراعين|ارعين|راعين')), 'ا ر ع'),
-    MapEntry(RegExp(_w('الف')), 'ا'),
-    MapEntry(RegExp(_w('باء|به|با')), 'ب'),
-    MapEntry(RegExp(_w('تاء')), 'ت'),
-    MapEntry(RegExp(_w('ثاء|ثه|ثا')), 'ث'),
-    MapEntry(RegExp(_w('جيم')), 'ج'),
+    MapEntry(RegExp(_w('قهو[هة]|قهوه')), 'ق ه و'),
+    MapEntry(RegExp(_w('اليف|همزه|الف')), 'ا'),
+    MapEntry(RegExp(_w('باء|بيه|به|با')), 'ب'),
+    MapEntry(RegExp(_w('تاء|تيه|ته|تا')), 'ت'),
+    MapEntry(RegExp(_w('جيم|قيم|قين|غيم')), 'ج'),
     MapEntry(RegExp(_w('حاء|حا')), 'ح'),
     MapEntry(RegExp(_w('خاء|خا|خه')), 'خ'),
-    MapEntry(RegExp(_w('دال')), 'د'),
-    MapEntry(RegExp(_w('ذال|ذه')), 'ذ'),
-    MapEntry(RegExp(_w('راء|را')), 'ر'),
+    MapEntry(RegExp(_w('دال|ذال')), 'د'),
+    MapEntry(RegExp(_w('راء|ريه|ره|را')), 'ر'),
     MapEntry(RegExp(_w('زاي|زا|زه')), 'ز'),
-    MapEntry(RegExp(_w('سين')), 'س'),
+    MapEntry(RegExp(_w('سين|ثاء|ثه|ثا')), 'س'),
     MapEntry(RegExp(_w('شين|شا|شي')), 'ش'),
     MapEntry(RegExp(_w('صاد|صا')), 'ص'),
     MapEntry(RegExp(_w('ضاد|ضا')), 'ض'),
-    MapEntry(RegExp(_w('طاء|طا|طه')), 'ط'),
-    MapEntry(RegExp(_w('ظاء|ظا|ظه')), 'ظ'),
-    MapEntry(RegExp(_w('عين|عا|عه')), 'ع'),
+    MapEntry(RegExp(_w('طاء|طيه|طا|طه|ظاء|ظا|ظه')), 'ط'),
+    MapEntry(RegExp(_w('عين|عينه|عان|عا|عه')), 'ع'),
     MapEntry(RegExp(_w('غين|غا|غه')), 'غ'),
-    MapEntry(RegExp(_w('فاء|فا|فه')), 'ف'),
-    MapEntry(RegExp(_w('قاف|قا|قه')), 'ق'),
-    MapEntry(RegExp(_w('كاف|كا|كه')), 'ك'),
+    MapEntry(RegExp(_w('فاء|فيه|فا|فه')), 'ف'),
+    MapEntry(RegExp(_w('قاف|قيف|جاف|قا|افه|اف')), 'ق'),
+    MapEntry(RegExp(_w('كاف|كيه|كا')), 'ك'),
     MapEntry(RegExp(_w('لام')), 'ل'),
     MapEntry(RegExp(_w('ميم')), 'م'),
     MapEntry(RegExp(_w('نون')), 'ن'),
-    MapEntry(RegExp(_w('هاء')), 'ه'),
+    MapEntry(RegExp(_w('هاء|هيه|هه')), 'ه'),
     MapEntry(RegExp(_w('واو|وا')), 'و'),
-    MapEntry(RegExp(_w('ياء|يه')), 'ي'),
+    MapEntry(RegExp(_w('ياء|ييه|يه')), 'ي'),
   ];
 
   static final RegExp _reDiacritics = RegExp(r'[\u064B-\u065F\u0670\u0640]');
@@ -291,6 +289,8 @@ class ArabicVoiceNormalizer {
   static final RegExp _reTwoPlusDigits = RegExp(r'\d{2,}');
   static final RegExp _reArabicWord = RegExp(r'^[ا-ي]+$');
   static final RegExp _reArabicWordUpTo7 = RegExp(r'^[ا-ي]{1,7}$');
+  static final RegExp _reFusedLetterDigit = RegExp(
+      r'(?<![ء-ي])(الف|اليف|همزه|باء|تاء|ثاء|جيم|قيم|حاء|خاء|دال|ذال|راء|زاي|سين|شين|صاد|ضاد|طاء|ظاء|عين|غين|فاء|قاف|جاف|قيف|كاف|لام|ميم|نون|هاء|واو|ياء)(صفر|زيرو|وحد|واحد[هة]?|تنين|اتنين|اثنين|تلت|تلات[هة]?|ثلاث[هة]?|اربع[هة]?|خمس[هة]?|ست[هة]?|سبع[هة]?|تماني[هة]?|ثماني[هة]?|تسع[هة]?)(?![ء-ي])');
   static final RegExp _reAlfBeforeNum = RegExp(
       r'(?<![ء-ي])(?:و\s*)?الف(?=\s+(?:و\s*)?(?:صفر|زيرو|م[يئ][هة]|متين|ميتين|مئتين|مائ|تلات|تلت|ثلاث|اربع|خمس|ست|سبع|تمان|تمن|ثمان|تسع|عشر|احد|حداشر|اتناشر|تلتاشر|اربعتاشر|خمستاشر|ستاشر|سبعتاشر|تمانتاشر|تسعتاشر|واحد|اتنين|اثن|عشرون|تلاتون|ثلاثون|اربعون|خمسون|ستون|سبعون|تمانون|ثمانون|تسعون))(?![ء-ي])');
   static final RegExp _reAlfTrailingPlate =
@@ -338,6 +338,9 @@ class ArabicVoiceNormalizer {
     // OR when immediately following 3 spoken letter tokens with no digits after it (e.g. "د ب ن الف").
     cleaned = cleaned.replaceAllMapped(_reAlfBeforeNum, (_) => ' 1000 ');
     cleaned = cleaned.replaceAllMapped(_reAlfTrailingPlate, (_) => ' 1000 ');
+
+    // De-fuse glued letter-name + number words (e.g. "سينتلاته" -> "سين تلاته", "قافاربعه" -> "قاف اربعه")
+    cleaned = cleaned.replaceAllMapped(_reFusedLetterDigit, (m) => '${m.group(1)} ${m.group(2)}');
 
     // Replace Spoken Letter Names
     for (final entry in arLetterNames) {
@@ -425,56 +428,72 @@ class ArabicVoiceNormalizer {
   /// Fused spoken letter-name syllables used by DP splitter when fast dictation merges
   /// 3 letter names into one token (e.g. "رانونيا" -> "را" + "نون" + "يا" -> "ر ن ي").
   static const Map<String, String> _letterSyllables = {
-    'الف': 'ا', 'اء': 'ا',
-    'باء': 'ب', 'با': 'ب', 'به': 'ب',
-    'تاء': 'ت', 'تا': 'ت', 'ته': 'ت',
-    'ثاء': 'ث', 'ثا': 'ث', 'ثه': 'ث',
-    'جيم': 'ج', 'جي': 'ج', 'جا': 'ج',
+    'الف': 'ا', 'اء': 'ا', 'اليف': 'ا', 'همزه': 'ا',
+    'باء': 'ب', 'با': 'ب', 'به': 'ب', 'بيه': 'ب',
+    'تاء': 'ت', 'تا': 'ت', 'ته': 'ت', 'تيه': 'ت',
+    'ثاء': 'س', 'ثا': 'س', 'ثه': 'س',
+    'جيم': 'ج', 'جي': 'ج', 'جا': 'ج', 'قيم': 'ج', 'قين': 'ج', 'غيم': 'ج',
     'حاء': 'ح', 'حا': 'ح', 'حه': 'ح',
     'خاء': 'خ', 'خا': 'خ', 'خه': 'خ',
-    'دال': 'د', 'دا': 'د',
-    'ذال': 'ذ', 'ذا': 'ذ', 'ذه': 'ذ',
-    'راء': 'ر', 'را': 'ر',
+    'دال': 'د', 'دا': 'د', 'ذال': 'د', 'ذا': 'د', 'ذه': 'د',
+    'راء': 'ر', 'را': 'ر', 'ره': 'ر', 'ريه': 'ر',
     'زاي': 'ز', 'زا': 'ز', 'زه': 'ز',
     'سين': 'س', 'سا': 'س',
     'شين': 'ش', 'شا': 'ش', 'شي': 'ش',
     'صاد': 'ص', 'صا': 'ص',
     'ضاد': 'ض', 'ضا': 'ض',
-    'طاء': 'ط', 'طا': 'ط', 'طه': 'ط',
-    'ظاء': 'ظ', 'ظا': 'ظ', 'ظه': 'ظ',
-    'عين': 'ع', 'عا': 'ع', 'عه': 'ع',
+    'طاء': 'ط', 'طا': 'ط', 'طه': 'ط', 'طيه': 'ط', 'ظاء': 'ط', 'ظا': 'ط', 'ظه': 'ط',
+    'عين': 'ع', 'عا': 'ع', 'عه': 'ع', 'عان': 'ع',
     'غين': 'غ', 'غا': 'غ', 'غه': 'غ',
-    'فاء': 'ف', 'فا': 'ف', 'فه': 'ف',
-    'قاف': 'ق', 'قا': 'ق', 'قه': 'ق',
-    'كاف': 'ك', 'كا': 'ك', 'كه': 'ك',
+    'فاء': 'ف', 'فا': 'ف', 'فه': 'ف', 'فيه': 'ف',
+    'قاف': 'ق', 'قا': 'ق', 'قيف': 'ق', 'جاف': 'ق', 'اف': 'ق', 'افه': 'ق',
+    'كاف': 'ك', 'كا': 'ك', 'كيه': 'ك',
     'لام': 'ل', 'لا': 'ل',
     'ميم': 'م', 'ما': 'م', 'مه': 'م',
     'نون': 'ن', 'نو': 'ن',
-    'هاء': 'ه', 'ها': 'ه',
+    'هاء': 'ه', 'ها': 'ه', 'هيه': 'ه',
     'واو': 'و', 'وا': 'و',
-    'ياء': 'ي', 'يا': 'ي', 'يه': 'ي',
+    'ياء': 'ي', 'يا': 'ي', 'يه': 'ي', 'ييه': 'ي',
   };
 
-  /// Phonetic confusion equivalence groups for rescuing fast/lisped Arabic letters
-  /// against a known Excel reference sheet using identical digits.
-  static const List<Set<String>> _phoneticGroups = [
-    {'س', 'ص', 'ث', 'ش'},
-    {'د', 'ذ', 'ض', 'ظ', 'ز'},
-    {'ت', 'ط'},
-    {'ق', 'ك', 'ج', 'ا'},
-    {'ر', 'ل', 'غ'},
-    {'ح', 'ه', 'ع', 'خ'},
-    {'م', 'ن'},
+  /// Weighted acoustic proximity matrix for rescuing fast/lisped/dialectal Arabic consonants
+  /// against a known Excel reference sheet with matching digits.
+  static const List<Set<String>> _strongPhoneticPairs = [
+    {'س', 'ص'},
+    {'د', 'ض'},
+    {'د', 'ط'},
+    {'ص', 'ض'},
+    {'ح', 'ه'},
+    {'ق', 'ك'},
+    {'ج', 'ق'},
     {'ب', 'ف'},
+    {'م', 'ن'},
   ];
 
-  static bool _arePhoneticallyClose(String a, String b) {
-    if (a == b) return true;
-    for (final grp in _phoneticGroups) {
-      if (grp.contains(a) && grp.contains(b)) return true;
+  static const List<Set<String>> _phoneticGroups = [
+    {'س', 'ص', 'ث', 'ش'},
+    {'د', 'ذ', 'ض', 'ط', 'ظ', 'ز'},
+    {'ص', 'ض'},
+    {'ت', 'ط'},
+    {'ق', 'ك', 'ج', 'ا'},
+    {'ر', 'ل', 'غ', 'ن'},
+    {'ح', 'ه', 'ع', 'خ', 'ا'},
+    {'ب', 'ف', 'م', 'ن'},
+  ];
+
+  static int _phoneticSimilarityWeight(String a, String b) {
+    if (a == b) return 5;
+    for (final pair in _strongPhoneticPairs) {
+      if (pair.contains(a) && pair.contains(b)) return 3;
     }
-    return false;
+    for (final grp in _phoneticGroups) {
+      if (grp.contains(a) && grp.contains(b)) return 2;
+    }
+    return 0;
   }
+
+  static bool _arePhoneticallyClose(String a, String b) =>
+      _phoneticSimilarityWeight(a, b) > 0;
 
   /// Splits a fused spoken letter-name word (like "رانونيا" or "انوي") into 3 isolated
   /// Arabic letters when >= 1 spoken letter-name syllable is present (maximizing multi-char matches).
@@ -545,18 +564,15 @@ class ArabicVoiceNormalizer {
       int score = 0;
       bool incompatible = false;
       for (int p = 0; p < 3; p++) {
-        final sCh = spokenLetters[p];
-        final cCh = candLetters[p];
-        if (sCh == cCh) {
-          score += 2;
-        } else if (_arePhoneticallyClose(sCh, cCh)) {
-          score += 1;
+        final w = _phoneticSimilarityWeight(spokenLetters[p], candLetters[p]);
+        if (w > 0) {
+          score += w;
         } else {
           incompatible = true;
           break;
         }
       }
-      if (incompatible || score < 5) continue; // require >= 2 exact + 1 phonetic close
+      if (incompatible || score < 12) continue; // require >= 2 exact (10) + 1 acoustic match (>= 2)
       if (score > bestScore) {
         bestScore = score;
         winnerIdx = rowIdx;
