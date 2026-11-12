@@ -76,6 +76,7 @@ class InspectionProvider extends ChangeNotifier {
   VoidCallback? _pendingIncompletePlate;
   DateTime? _lastIngestedAt;
   String _lastProcessedTranscript = '';
+  final PlateUtteranceStitcher _stitcher = PlateUtteranceStitcher();
   String _currentTranscript = '';
   String get currentTranscript => _currentTranscript;
   int _entriesVersion = 0;
@@ -121,6 +122,7 @@ class InspectionProvider extends ChangeNotifier {
     _lastKey = null;
     _lastIngestedAt = null;
     _lastProcessedTranscript = '';
+    _stitcher.reset();
     _currentTranscript = '';
     _slots = {'l1': '-', 'l2': '-', 'l3': '-', 'd1': '-', 'd2': '-', 'd3': '-', 'd4': '-'};
     _entriesVersion++;
@@ -303,6 +305,7 @@ class InspectionProvider extends ChangeNotifier {
     _isListening = true;
     _currentTranscript = '';
     _lastProcessedTranscript = '';
+    _stitcher.reset();
     _timer = 0;
     _ticker?.cancel();
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -319,13 +322,25 @@ class InspectionProvider extends ChangeNotifier {
         }
         if (raw == _lastProcessedTranscript && !isFinal) return;
         _lastProcessedTranscript = isFinal ? '' : raw;
-        _currentTranscript = ArabicVoiceNormalizer.extractActiveTickerText(normalized, isFinal: isFinal);
-        if (slots.isNotEmpty) {
-          _slots = slots;
+
+        final stitched = _stitcher.process(
+          rawTranscript: raw,
+          normalizedTranscript: normalized,
+          rawPlates: plates,
+          rawSlots: slots,
+          isFinal: isFinal,
+        );
+        final effectiveNorm = stitched.normalized;
+        final effectivePlates = stitched.plates;
+        final effectiveSlots = stitched.slots;
+
+        _currentTranscript = ArabicVoiceNormalizer.extractActiveTickerText(effectiveNorm, isFinal: isFinal);
+        if (effectiveSlots.isNotEmpty) {
+          _slots = effectiveSlots;
         }
 
         // 1. Immediate commit for finished 4-digit plates
-        final completePlates = plates.where((p) => p.isComplete).toList();
+        final completePlates = effectivePlates.where((p) => p.isComplete).toList();
         for (final p in completePlates) {
           _ingestInspectionPlate(p, onMatch);
         }
@@ -333,12 +348,13 @@ class InspectionProvider extends ChangeNotifier {
         // 2. Trailing 3-digit plate: wait 350ms for optional 4th digit; else pad '0' & close
         _incompletePlateTimer?.cancel();
         _pendingIncompletePlate = null;
-        if (plates.isNotEmpty && !plates.last.isComplete) {
-          final pending = plates.last;
+        if (effectivePlates.isNotEmpty && !effectivePlates.last.isComplete) {
+          final pending = effectivePlates.last;
           void commitThreeDigit() {
             final closed = ArabicVoiceNormalizer.finalizeThreeDigitPlate(pending);
             _ingestInspectionPlate(closed, onMatch);
             _slots = ArabicVoiceNormalizer.extractSlotsFromPlates([closed]);
+            _stitcher.clearPending();
             _currentTranscript = '';
           }
 
@@ -357,7 +373,7 @@ class InspectionProvider extends ChangeNotifier {
         }
 
         // 3. 0ms local Excel vowel-injected word rescue, else AI fallback on unparsed tail
-        final unparsedTail = ArabicVoiceNormalizer.extractUnparsedTail(normalized);
+        final unparsedTail = ArabicVoiceNormalizer.extractUnparsedTail(effectiveNorm);
         final rescuedFromSheet = (unparsedTail.isNotEmpty && _table != null)
             ? ArabicVoiceNormalizer.rescueUnparsedTailAgainstSheet(
                 unparsedTail,
@@ -369,6 +385,7 @@ class InspectionProvider extends ChangeNotifier {
           _aiTimer?.cancel();
           _ingestInspectionPlate(rescuedFromSheet, onMatch);
           _slots = ArabicVoiceNormalizer.extractSlotsFromPlates([rescuedFromSheet]);
+          _stitcher.clearPending();
         } else {
           _scheduleAiFallback(raw, unparsedTail, onMatch);
         }
@@ -377,6 +394,7 @@ class InspectionProvider extends ChangeNotifier {
       },
       onDone: () {
         _flushPendingIncompletePlate();
+        _stitcher.reset();
         _isListening = false;
         _ticker?.cancel();
         notifyListeners();
@@ -459,6 +477,7 @@ class InspectionProvider extends ChangeNotifier {
 
   Future<void> stopListening() async {
     _flushPendingIncompletePlate();
+    _stitcher.reset();
     _aiTimer?.cancel();
     await _speech.stopListening();
     _isListening = false;

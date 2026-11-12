@@ -49,6 +49,7 @@ class CarRecordProvider extends ChangeNotifier {
   final Map<String, String> _upgradedKeyRedirects = {};
   final Map<String, CarRecord> _recordByKey = {};
   String _lastProcessedTranscript = '';
+  final PlateUtteranceStitcher _stitcher = PlateUtteranceStitcher();
   String? _lastKey;
   int _orphanSession = -1;
   String? _orphanTarget;
@@ -130,6 +131,7 @@ class CarRecordProvider extends ChangeNotifier {
     _incompletePlateTimer?.cancel();
     _pendingIncompletePlate = null;
     _aiTimer?.cancel();
+    _stitcher.reset();
     _currentUserId = uid;
     _dbHelper.currentUserId = uid;
     _recordedPlates.clear();
@@ -279,6 +281,7 @@ class CarRecordProvider extends ChangeNotifier {
     _isListening = true;
     _currentTranscript = '';
     _lastProcessedTranscript = '';
+    _stitcher.reset();
     _listeningTimer = 0;
     _orphanSession = -1;
     unawaited(_refreshLocation());
@@ -295,22 +298,34 @@ class CarRecordProvider extends ChangeNotifier {
         }
         if (rawTranscript == _lastProcessedTranscript && !isFinal) return;
         _lastProcessedTranscript = isFinal ? '' : rawTranscript;
-        _currentTranscript = ArabicVoiceNormalizer.extractActiveTickerText(normalized, isFinal: isFinal);
-        if (slots.isNotEmpty) {
-          _currentSlots = slots;
+
+        final stitched = _stitcher.process(
+          rawTranscript: rawTranscript,
+          normalizedTranscript: normalized,
+          rawPlates: extractedPlates,
+          rawSlots: slots,
+          isFinal: isFinal,
+        );
+        final effectiveNorm = stitched.normalized;
+        final effectivePlates = stitched.plates;
+        final effectiveSlots = stitched.slots;
+
+        _currentTranscript = ArabicVoiceNormalizer.extractActiveTickerText(effectiveNorm, isFinal: isFinal);
+        if (effectiveSlots.isNotEmpty) {
+          _currentSlots = effectiveSlots;
         }
 
-        if (normalized.contains('بدايه جراج يمين') || normalized.contains('جراج يمين')) {
+        if (effectiveNorm.contains('بدايه جراج يمين') || effectiveNorm.contains('جراج يمين')) {
           _stickyNote = 'جراج يمين';
-        } else if (normalized.contains('بدايه برحه يسار') || normalized.contains('برحه يسار')) {
+        } else if (effectiveNorm.contains('بدايه برحه يسار') || effectiveNorm.contains('برحه يسار')) {
           _stickyNote = 'برحة يسار';
         }
-        if (normalized.contains('انتهي') || normalized.contains('انتهت')) {
+        if (effectiveNorm.contains('انتهي') || effectiveNorm.contains('انتهت')) {
           _stickyNote = null;
         }
 
         // 1. Commit all completed 4-digit plates at 0ms
-        final completePlates = extractedPlates.where((p) => p.isComplete).toList();
+        final completePlates = effectivePlates.where((p) => p.isComplete).toList();
         for (int i = 0; i < completePlates.length; i++) {
           _ingestPlate(
             completePlates[i],
@@ -323,12 +338,13 @@ class CarRecordProvider extends ChangeNotifier {
         // 2. Trailing 3-digit plate: wait 350ms for optional 4th digit; else pad '0' & close
         _incompletePlateTimer?.cancel();
         _pendingIncompletePlate = null;
-        if (extractedPlates.isNotEmpty && !extractedPlates.last.isComplete) {
-          final pending = extractedPlates.last;
+        if (effectivePlates.isNotEmpty && !effectivePlates.last.isComplete) {
+          final pending = effectivePlates.last;
           void commitThreeDigit() {
             final closed = ArabicVoiceNormalizer.finalizeThreeDigitPlate(pending);
             _ingestPlate(closed, sortAuditProvider, onPlateAdded);
             _applySlotsFromPlate(closed);
+            _stitcher.clearPending();
             _currentTranscript = '';
           }
 
@@ -347,7 +363,7 @@ class CarRecordProvider extends ChangeNotifier {
         }
 
         // 3. 0ms local Excel vowel-injected word rescue, else AI fallback on unparsed tail
-        final unparsedTail = ArabicVoiceNormalizer.extractUnparsedTail(normalized);
+        final unparsedTail = ArabicVoiceNormalizer.extractUnparsedTail(effectiveNorm);
         final rescuedFromSheet = unparsedTail.isNotEmpty
             ? sortAuditProvider.rescueUnparsedPlate(unparsedTail)
             : null;
@@ -355,6 +371,7 @@ class CarRecordProvider extends ChangeNotifier {
           _aiTimer?.cancel();
           _ingestPlate(rescuedFromSheet, sortAuditProvider, onPlateAdded);
           _applySlotsFromPlate(rescuedFromSheet);
+          _stitcher.clearPending();
         } else {
           _scheduleAiFallback(rawTranscript, unparsedTail, sortAuditProvider, onPlateAdded);
         }
@@ -363,6 +380,7 @@ class CarRecordProvider extends ChangeNotifier {
       },
       onDone: () {
         _flushPendingIncompletePlate();
+        _stitcher.reset();
         _isListening = false;
         _stopTimer();
         notifyListeners();
@@ -705,6 +723,7 @@ class CarRecordProvider extends ChangeNotifier {
 
   Future<void> stopVoiceListening() async {
     _flushPendingIncompletePlate();
+    _stitcher.reset();
     _aiTimer?.cancel();
     await _speechService.stopListening();
     _isListening = false;
@@ -869,6 +888,7 @@ class CarRecordProvider extends ChangeNotifier {
     _lastReadIsWanted = false;
     _lastMatchResult = null;
     _currentTranscript = '';
+    _stitcher.reset();
     notifyListeners();
   }
 

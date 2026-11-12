@@ -37,25 +37,25 @@ jobs:
       - name: Build APK (Release)
         run: |
           flutter build apk --release
-          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/AIMS-Mobile-v1.1.4.apk
+          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/AIMS-Mobile-v1.1.5.apk
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
         with:
-          tag_name: v1.1.4
-          name: "AIMS-Mobile v1.1.4 (Universal Word-Merged 3-Letter Decoder + Sheet Subsequence Rescue + Letter-First UI)"
+          tag_name: v1.1.5
+          name: "AIMS-Mobile v1.1.5 (Cross-Utterance Letter+Digit Linking + Filler Bridge)"
           draft: false
           prerelease: false
           make_latest: true
           body: |
-            ## 🚗 AIMS-Mobile / TargaRadar APK Release v1.1.4
-            - Universal 0ms decoder for ANY 3-letter Arabic ASR merge ("انوي" -> "ا ن ي", "راعين" -> "ا ر ع", "هاني" -> "ه ن ي", "كلام" -> "ك ل م", "سالم" -> "س ل م", "حامد" -> "ح م د", "رامي" -> "ر م ي") both live and with digits.
-            - 0ms Vowel-Tolerant Sheet Rescue ("سعود 2816" -> "س ع د 2816", "احمد 2816" -> "ح م د 2816") across both Registration & Inspection modes.
-            - Letter-first RTL 7-slot visualizer (`l1 l2 l3` on right, LTR `d1 d2 d3 d4` on left), LiveSpeechTicker strip removed, 6s post-speech auto-stop, and 5s far-field endpointing.
+            ## 🚗 AIMS-Mobile / TargaRadar APK Release v1.1.5
+            - Added `PlateUtteranceStitcher` (5.5s rolling stitch buffer) across both Registration & Inspection modes so spoken letters & digits stay linked in live slots and commit together even across pauses or Android SpeechRecognizer restarts.
+            - Added filler-word bridge (`رقم` / `نمرة` / `لوحة`) between spoken 3 letters and 3-4 digits in both orders.
+            - Includes all v1.1.4 improvements: universal 3-letter word-merge decoding (`انوي`, `راعين`, etc.), vowel-tolerant sheet rescue, letter-first RTL 7-slots, 6s auto-stop, and 5s far-field endpointing.
           files: |
             build/app/outputs/flutter-apk/app-release.apk
-            build/app/outputs/flutter-apk/AIMS-Mobile-v1.1.4.apk
+            build/app/outputs/flutter-apk/AIMS-Mobile-v1.1.5.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

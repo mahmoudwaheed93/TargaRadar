@@ -106,6 +106,8 @@ class ArabicVoiceNormalizer {
       .replaceAll(RegExp(r'[أإآ]'), 'ا')
       .replaceAll('ى', 'ي');
 
+  static final Set<String> _fillerSet = fillerWords.map(_normWord).toSet();
+
   static final Set<String> _nonLetterTokens = {
     ...fillerWords,
     ...stopWords,
@@ -909,23 +911,30 @@ class ArabicVoiceNormalizer {
         }
       }
 
-      // Pattern A/B: Letters (strictly 3) then Digits (3 or 4)
+      // Pattern A/B: Letters (strictly 3) + optional filler ('رقم'/'نمره'/'لوحه') + Digits (3 or 4)
       final colA = _collectLetters(tokens, i, maxCollect: 4);
-      if (colA.letters.length == 3 &&
-          colA.nextIdx < tokens.length &&
-          _isPlateDigits(tokens[colA.nextIdx])) {
-        final letters = colA.letters.join(' ');
-        final digits = tokens[colA.nextIdx];
-        matches.add(_PlateMatch(
-          startIndex: i,
-          endIndex: colA.nextIdx + 1,
-          letters: letters,
-          digits: digits,
-          fullPlate: '$letters $digits',
-          isDigitsFirst: false,
-        ));
-        i = colA.nextIdx + 1;
-        continue;
+      if (colA.letters.length == 3) {
+        int digitIdx = colA.nextIdx;
+        if (digitIdx < tokens.length &&
+            _fillerSet.contains(tokens[digitIdx]) &&
+            digitIdx + 1 < tokens.length &&
+            _isPlateDigits(tokens[digitIdx + 1])) {
+          digitIdx++;
+        }
+        if (digitIdx < tokens.length && _isPlateDigits(tokens[digitIdx])) {
+          final letters = colA.letters.join(' ');
+          final digits = tokens[digitIdx];
+          matches.add(_PlateMatch(
+            startIndex: i,
+            endIndex: digitIdx + 1,
+            letters: letters,
+            digits: digits,
+            fullPlate: '$letters $digits',
+            isDigitsFirst: false,
+          ));
+          i = digitIdx + 1;
+          continue;
+        }
       }
       // Fused letter-name fallback BEFORE 4-char skip (e.g. "رانونيا 2816" or "رانو نيا 2816" -> "ر ن ي 2816")
       if (_phraseLengthAt(tokens, i) == 0 &&
@@ -1020,7 +1029,10 @@ class ArabicVoiceNormalizer {
           }
         }
 
-        final colC = _collectLetters(tokens, i + 1, maxCollect: 4);
+        final letterStart = (i + 1 < tokens.length && _fillerSet.contains(tokens[i + 1]))
+            ? i + 2
+            : i + 1;
+        final colC = _collectLetters(tokens, letterStart, maxCollect: 4);
         if (colC.letters.length == 3) {
           final letters = colC.letters.join(' ');
           final digits = tokens[i];
@@ -1357,5 +1369,100 @@ class ArabicVoiceNormalizer {
     }
 
     return (rawTranscript: bestRaw, normalized: bestNorm, plates: bestPlates);
+  }
+}
+
+/// Cross-utterance stitching buffer: preserves an unfinished plate fragment
+/// (e.g. 3 letters spoken before a short pause, or 4 digits spoken first)
+/// for up to 5.5 seconds across Android SpeechRecognizer restarts so digits
+/// and letters always link cleanly.
+class PlateUtteranceStitcher {
+  String _pendingTail = '';
+  DateTime? _pendingAt;
+  String _lastRaw = '';
+  String _latestTailInUtterance = '';
+
+  static const Duration _ttl = Duration(milliseconds: 5500);
+
+  void reset() {
+    _pendingTail = '';
+    _pendingAt = null;
+    _lastRaw = '';
+    _latestTailInUtterance = '';
+  }
+
+  /// Clears only the saved fragment once a delayed commit (3-digit pad or sheet rescue) finishes.
+  void clearPending() {
+    _pendingTail = '';
+    _pendingAt = null;
+    _latestTailInUtterance = '';
+  }
+
+  ({String normalized, List<ParsedPlateData> plates, Map<String, String> slots}) process({
+    required String rawTranscript,
+    required String normalizedTranscript,
+    required List<ParsedPlateData> rawPlates,
+    required Map<String, String> rawSlots,
+    required bool isFinal,
+    DateTime? now,
+  }) {
+    final ts = now ?? DateTime.now();
+    final isRestart = _lastRaw.isNotEmpty && rawTranscript.length < _lastRaw.length;
+    if (isRestart) {
+      if (_latestTailInUtterance.isNotEmpty && _isStitchableFragment(_latestTailInUtterance)) {
+        _pendingTail = _latestTailInUtterance;
+        _pendingAt = ts;
+      }
+      _latestTailInUtterance = '';
+    }
+    _lastRaw = isFinal ? '' : rawTranscript;
+
+    if (_pendingAt != null && ts.difference(_pendingAt!) > _ttl) {
+      _pendingTail = '';
+      _pendingAt = null;
+    }
+
+    var effectiveNorm = normalizedTranscript;
+    var effectivePlates = rawPlates;
+    var effectiveSlots = rawSlots;
+
+    if (_pendingTail.isNotEmpty && effectivePlates.isEmpty && normalizedTranscript.isNotEmpty) {
+      final combined = '$_pendingTail $normalizedTranscript'.trim();
+      final stitchedPlates = ArabicVoiceNormalizer.extractPlatesFromNormalized(combined);
+      if (stitchedPlates.isNotEmpty) {
+        effectiveNorm = combined;
+        effectivePlates = stitchedPlates;
+        effectiveSlots = ArabicVoiceNormalizer.extractLiveSlots(combined, stitchedPlates);
+      } else {
+        final combinedSlots = ArabicVoiceNormalizer.extractLiveSlots(combined, const []);
+        if (combinedSlots.isNotEmpty) {
+          effectiveNorm = combined;
+          effectiveSlots = combinedSlots;
+        }
+      }
+    }
+
+    final unparsed = ArabicVoiceNormalizer.extractUnparsedTail(effectiveNorm);
+    _latestTailInUtterance = (effectivePlates.isNotEmpty && !effectivePlates.last.isComplete)
+        ? ''
+        : unparsed;
+
+    if (effectivePlates.isNotEmpty && effectivePlates.last.isComplete) {
+      _pendingTail = unparsed.isNotEmpty && _isStitchableFragment(unparsed) ? unparsed : '';
+      _pendingAt = _pendingTail.isNotEmpty ? ts : null;
+      if (isFinal) _latestTailInUtterance = '';
+    } else if (isFinal) {
+      _pendingTail = unparsed.isNotEmpty && _isStitchableFragment(unparsed) ? unparsed : '';
+      _pendingAt = _pendingTail.isNotEmpty ? ts : null;
+      _latestTailInUtterance = '';
+    }
+
+    return (normalized: effectiveNorm, plates: effectivePlates, slots: effectiveSlots);
+  }
+
+  static bool _isStitchableFragment(String normTail) {
+    final tokens = normTail.split(' ').where((t) => t.isNotEmpty).toList();
+    if (tokens.isEmpty || tokens.length > 4) return false;
+    return tokens.any((t) => RegExp(r'^[ا-ي]{1,6}$').hasMatch(t) || RegExp(r'^\d{3,4}$').hasMatch(t));
   }
 }

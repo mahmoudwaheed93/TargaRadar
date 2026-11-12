@@ -434,5 +434,70 @@ void main() {
       );
       expect(resBad, isNull);
     });
+
+    test('Filler bridge (رقم/لوحة) and PlateUtteranceStitcher link letters & digits across pauses', () {
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('د ب ن رقم 2816').first.fullPlate, equals('د ب ن 2816'));
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('2816 لوحة د ب ن').first.fullPlate, equals('د ب ن 2816'));
+
+      final stitcher = PlateUtteranceStitcher();
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+
+      // Utterance 1: user says letters only, SpeechRecognizer restarts before digits
+      final u1Norm = ArabicVoiceNormalizer.normalizeArabicSpoken('ا ر ع');
+      stitcher.process(
+        rawTranscript: 'ا ر ع',
+        normalizedTranscript: u1Norm,
+        rawPlates: const [],
+        rawSlots: ArabicVoiceNormalizer.extractLiveSlots(u1Norm, const []),
+        isFinal: true,
+        now: t0,
+      );
+
+      // Utterance 2 (1.5s later): partial "28" preserves letters + shows digits live
+      final partial = stitcher.process(
+        rawTranscript: '28',
+        normalizedTranscript: '28',
+        rawPlates: const [],
+        rawSlots: ArabicVoiceNormalizer.extractLiveSlots('28', const []),
+        isFinal: false,
+        now: t0.add(const Duration(milliseconds: 1500)),
+      );
+      expect(partial.slots['l1'], equals('ا'));
+      expect(partial.slots['l2'], equals('ر'));
+      expect(partial.slots['l3'], equals('ع'));
+      expect(partial.slots['d1'], equals('2'));
+      expect(partial.slots['d2'], equals('8'));
+
+      // Utterance 2 completes "2816" -> commits full plate 'ا ر ع 2816'
+      final done = stitcher.process(
+        rawTranscript: '2816',
+        normalizedTranscript: '2816',
+        rawPlates: const [],
+        rawSlots: ArabicVoiceNormalizer.extractLiveSlots('2816', const []),
+        isFinal: false,
+        now: t0.add(const Duration(milliseconds: 2000)),
+      );
+      expect(done.plates.length, equals(1));
+      expect(done.plates.first.fullPlate, equals('ا ر ع 2816'));
+
+      // Stale fragment (>6s later) must NOT leak into next utterance
+      stitcher.process(
+        rawTranscript: 'انوي',
+        normalizedTranscript: ArabicVoiceNormalizer.normalizeArabicSpoken('انوي'),
+        rawPlates: const [],
+        rawSlots: ArabicVoiceNormalizer.extractLiveSlots('ا ن ي', const []),
+        isFinal: true,
+        now: t0.add(const Duration(seconds: 4)),
+      );
+      final stale = stitcher.process(
+        rawTranscript: '9999',
+        normalizedTranscript: '9999',
+        rawPlates: const [],
+        rawSlots: ArabicVoiceNormalizer.extractLiveSlots('9999', const []),
+        isFinal: true,
+        now: t0.add(const Duration(seconds: 11)),
+      );
+      expect(stale.plates, isEmpty);
+    });
   });
 }
