@@ -40,25 +40,28 @@ jobs:
       - name: Build APK (Release)
         run: |
           flutter build apk --release
-          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/AIMS-Mobile-v1.1.5.apk
+          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/AIMS-Mobile-v1.2.0.apk
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
         with:
-          tag_name: v1.1.5
-          name: "AIMS-Mobile v1.1.5 (Cross-Utterance Letter+Digit Linking + Filler Bridge)"
+          tag_name: v1.2.0
+          name: "AIMS-Mobile v1.2.0 (Tasks A-G: Zero-Gap 0ms Restart, <8ms Incremental Engine & Multi-Dialect NLP)"
           draft: false
           prerelease: false
           make_latest: true
           body: |
-            ## 🚗 AIMS-Mobile / TargaRadar APK Release v1.1.5
-            - Added `PlateUtteranceStitcher` (5.5s rolling stitch buffer) across both Registration & Inspection modes so spoken letters & digits stay linked in live slots and commit together even across pauses or Android SpeechRecognizer restarts.
-            - Added filler-word bridge (`رقم` / `نمرة` / `لوحة`) between spoken 3 letters and 3-4 digits in both orders.
-            - Includes all v1.1.4 improvements: universal 3-letter word-merge decoding (`انوي`, `راعين`, etc.), vowel-tolerant sheet rescue, letter-first RTL 7-slots, 6s auto-stop, and 5s far-field endpointing.
+            ## 🚗 AIMS-Mobile / TargaRadar APK Release v1.2.0
+            - Task A: Debug-only high-res JSONL telemetry logger + 60s benchmark suite.
+            - Task B: Single deduplicated 0ms restart state machine, dynamic callbacks, Android recognizer beep mute (`MainActivity`), `AudioFocus.none` alarms, & `SpeechEngineType` streaming architecture.
+            - Task C: On-Device fast mode default with dynamic Arabic locale resolution (`ar_EG`/`ar_SA`/`ar_AE`) & Cloud fallback + `160ms` 3-digit commit & 5s 4th-digit upgrade.
+            - Task D: Precompiled static `RegExp`s, 128-entry LRU cache, incremental $O(1)$ uncommitted tail parsing (<8ms/partial), early duplicate filter & UI coalescing.
+            - Task E & F: Multi-dialect letter pronunciations, glued letter+digit de-fusing, compound spoken numbers, weighted acoustic confusion matrix & 60s continuous regression suite.
+            - Task G: iOS privacy keys, Web Speech API support, permanent/cloud language error termination & App Settings permission UX.
           files: |
             build/app/outputs/flutter-apk/app-release.apk
-            build/app/outputs/flutter-apk/AIMS-Mobile-v1.1.5.apk
+            build/app/outputs/flutter-apk/AIMS-Mobile-v1.2.0.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
