@@ -1041,12 +1041,13 @@ class ArabicVoiceNormalizer {
             !_isDigits(tokens[i + 1]) &&
             !_nonLetterTokens.contains(tokens[i + 1])) {
           bool matchedFusedAfter = false;
-          for (int span = 1; span <= 2 && i + span < tokens.length; span++) {
+          for (int span = 2; span >= 1; span--) {
+            if (i + span >= tokens.length) continue;
             if (span == 2 &&
                 (_phraseLengthAt(tokens, i + 2) > 0 ||
                     _isDigits(tokens[i + 2]) ||
                     _nonLetterTokens.contains(tokens[i + 2]))) {
-              break;
+              continue;
             }
             final joined = tokens.sublist(i + 1, i + 1 + span).join('');
             final fused = _splitFusedToThreeLetters(joined);
@@ -1176,16 +1177,17 @@ class ArabicVoiceNormalizer {
         final t = tokens[i];
         if (_isLetter(t)) {
           liveLetters.add(t);
-        } else if (_isGluedLetters(t)) {
-          liveLetters.addAll(t.split(''));
-        } else if (!_isDigits(t) && !_nonLetterTokens.contains(t)) {
-          final fused = _splitFusedToThreeLetters(t);
+        } else {
+          final fused = (!_isDigits(t) && !_nonLetterTokens.contains(t))
+              ? _splitFusedToThreeLetters(t)
+              : null;
           if (fused != null) {
             liveLetters.addAll(fused);
+          } else if (_isGluedLetters(t)) {
+            liveLetters.addAll(t.split(''));
+          } else if (_isDigits(t)) {
+            liveDigits.addAll(t.split(''));
           }
-        }
-        if (_isDigits(t)) {
-          liveDigits.addAll(t.split(''));
         }
       }
       if (liveLetters.isNotEmpty || liveDigits.isNotEmpty) {
