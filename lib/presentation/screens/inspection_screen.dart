@@ -332,7 +332,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
       ),
       body: Selector<InspectionProvider, (int, bool, int, bool)>(
         selector: (_, p) => (p.entriesVersion, _useTextInput, p.refCount, p.hasReference),
-        builder: (context, _, __) => CustomScrollView(
+        builder: (context, _, _) => CustomScrollView(
         slivers: [
           SliverToBoxAdapter(
             child: Column(
@@ -351,7 +351,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                       Expanded(
                         child: Selector<InspectionProvider, (bool, String, int)>(
                           selector: (_, p) => (p.hasReference, p.refFileName, p.refCount),
-                          builder: (_, ref, __) => Column(
+                          builder: (_, ref, _) => Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
@@ -369,7 +369,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                       ),
                       Selector<InspectionProvider, (bool, bool)>(
                         selector: (_, p) => (p.loadingFile, p.hasReference),
-                        builder: (_, st, __) => ElevatedButton.icon(
+                        builder: (_, st, _) => ElevatedButton.icon(
                         onPressed: st.$1 ? null : () => _pickReference(insp),
                         icon: st.$1
                             ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
@@ -420,7 +420,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                         child: RepaintBoundary(
                           child: Selector<InspectionProvider, Map<String, String>>(
                             selector: (_, p) => p.slots,
-                            builder: (_, slots, __) => SingleChildScrollView(
+                            builder: (_, slots, _) => SingleChildScrollView(
                               scrollDirection: Axis.horizontal,
                               child: Row(
                                 textDirection: TextDirection.rtl,
@@ -454,7 +454,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                           const SizedBox(width: 6),
                           Selector<InspectionProvider, (bool, int)>(
                             selector: (_, p) => (p.isListening, p.listeningSeconds),
-                            builder: (_, st, __) => ElevatedButton.icon(
+                            builder: (_, st, _) => ElevatedButton.icon(
                               onPressed: () => _toggleMic(insp),
                               icon: Icon(st.$1 ? Icons.stop_rounded : Icons.mic_rounded, size: 16),
                               label: Text(

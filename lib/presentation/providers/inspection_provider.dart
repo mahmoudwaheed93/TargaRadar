@@ -9,7 +9,6 @@ import '../../core/services/sound_alert_service.dart';
 import '../../core/services/speech_service.dart';
 import '../../core/services/voice_telemetry_logger.dart';
 import '../../core/utils/date_formatter.dart';
-import '../../data/models/excel_vehicle_model.dart';
 
 /// One plate heard during an inspection session.
 class InspectionEntry {

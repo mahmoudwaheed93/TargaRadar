@@ -5,7 +5,6 @@ import 'speech_to_text_service_mobile.dart';
 import 'speech_to_text_service_web.dart';
 import 'arabic_voice_normalizer.dart';
 import 'voice_telemetry_logger.dart';
-import '../../data/models/excel_vehicle_model.dart';
 
 class SpeechService {
   static final SpeechService instance = SpeechService._init();

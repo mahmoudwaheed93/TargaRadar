@@ -216,7 +216,7 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
             const SizedBox(width: 8),
             Selector<CarRecordProvider, int>(
               selector: (_, p) => p.recordsVersion,
-              builder: (_, __, ___) => Container(
+              builder: (_, _, _) => Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   color: const Color(0xFF1E293B),
@@ -305,7 +305,7 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
       ),
       body: Selector<CarRecordProvider, (int, bool)>(
         selector: (_, p) => (p.recordsVersion, _useTextInput),
-        builder: (context, _, __) => CustomScrollView(
+        builder: (context, _, _) => CustomScrollView(
         slivers: [
           SliverToBoxAdapter(
             child: Column(
@@ -362,7 +362,7 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
                 ),
                 Selector<CarRecordProvider, String?>(
                   selector: (_, p) => p.stickyNote,
-                  builder: (_, sticky, __) => sticky == null
+                  builder: (_, sticky, _) => sticky == null
                       ? const SizedBox.shrink()
                       : Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -435,7 +435,7 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
                       Expanded(
                         child: Selector<ExcelSortAuditProvider, (String, int)>(
                           selector: (_, a) => (a.sheetFileName, a.totalSheetCount),
-                          builder: (_, data, __) => Column(
+                          builder: (_, data, _) => Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
@@ -458,7 +458,7 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
                 ),
                 Selector<ExcelSortAuditProvider, bool>(
                   selector: (_, a) => a.sheetFileName.isNotEmpty,
-                  builder: (_, hasSheet, __) => ElevatedButton.icon(
+                  builder: (_, hasSheet, _) => ElevatedButton.icon(
                     onPressed: () => _showFileImportDialog(context, auditProvider),
                     icon: const Icon(Icons.upload_file_rounded, size: 14),
                     label: Text(
@@ -532,7 +532,7 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
                     const SizedBox(width: 6),
                     Selector<CarRecordProvider, (bool, int)>(
                       selector: (_, p) => (p.isListening, p.listeningTimer),
-                      builder: (_, st, __) => ElevatedButton.icon(
+                      builder: (_, st, _) => ElevatedButton.icon(
                         onPressed: () async {
                           final insp = context.read<InspectionProvider>();
                           if (insp.isListening) await insp.stopListening();
@@ -764,7 +764,7 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
                     const Text('آخر قراءة مكتملة', style: TextStyle(color: AppColors.textMutedDark, fontSize: 11)),
                     Selector<CarRecordProvider, int>(
                       selector: (_, p) => p.listeningTimer,
-                      builder: (_, sec, __) => Text(
+                      builder: (_, sec, _) => Text(
                         '${(sec ~/ 60).toString().padLeft(2, '0')}:${(sec % 60).toString().padLeft(2, '0')}',
                         style: const TextStyle(color: AppColors.primary, fontSize: 11, fontFamily: 'monospace', fontWeight: FontWeight.bold),
                       ),
@@ -803,7 +803,7 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
                 RepaintBoundary(
                   child: Selector<CarRecordProvider, Map<String, String>>(
                     selector: (_, p) => p.currentSlots,
-                    builder: (_, slots, __) => Row(
+                    builder: (_, slots, _) => Row(
                       textDirection: TextDirection.rtl,
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [

@@ -208,7 +208,7 @@ class _TwoFileMatchScreenState extends State<TwoFileMatchScreen> {
                         return ListView.separated(
                           shrinkWrap: true,
                           itemCount: visibleIndices.length,
-                          separatorBuilder: (_, __) => const Divider(color: Color(0xFF1E293B), height: 1),
+                          separatorBuilder: (_, _) => const Divider(color: Color(0xFF1E293B), height: 1),
                           itemBuilder: (context, pos) {
                             final i = visibleIndices[pos];
                             final h = i < headers.length && headers[i].isNotEmpty ? headers[i] : 'حقل ${i + 1}';
@@ -558,7 +558,7 @@ class _TwoFileMatchScreenState extends State<TwoFileMatchScreen> {
                         ),
                         child: ListView.separated(
                           itemCount: r.matchedRows.length,
-                          separatorBuilder: (_, __) => const Divider(color: Color(0xFF1E293B), height: 1),
+                          separatorBuilder: (_, _) => const Divider(color: Color(0xFF1E293B), height: 1),
                         itemBuilder: (context, i) {
                           final row = r.matchedRows[i];
                           final plateVal = plateCol < row.length ? row[plateCol] : 'صف ${i + 1}';

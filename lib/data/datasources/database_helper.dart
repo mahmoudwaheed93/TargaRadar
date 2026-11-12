@@ -80,15 +80,13 @@ class DatabaseHelper {
 
   /// The uid of the currently signed-in user. Must be set before any
   /// query/insert so that records are scoped per account.
-  String _currentUserId = '';
-  set currentUserId(String uid) => _currentUserId = uid;
-  String get currentUserId => _currentUserId;
-  void resetUser() => _currentUserId = '';
+  String currentUserId = '';
+  void resetUser() => currentUserId = '';
 
   Future<int> insertCarRecord(CarRecord record) async {
     final db = await database;
     final map = record.toMap();
-    map['user_id'] = _currentUserId;
+    map['user_id'] = currentUserId;
     return await db.insert(
       'car_records',
       map,
@@ -101,7 +99,7 @@ class DatabaseHelper {
     final result = await db.query(
       'car_records',
       where: 'user_id = ?',
-      whereArgs: [_currentUserId],
+      whereArgs: [currentUserId],
       orderBy: 'registration_date DESC',
     );
     return result.map((json) => CarRecord.fromMap(json)).toList();
@@ -112,7 +110,7 @@ class DatabaseHelper {
     final result = await db.query(
       'car_records',
       where: 'user_id = ?',
-      whereArgs: [_currentUserId],
+      whereArgs: [currentUserId],
       orderBy: 'registration_date DESC',
       limit: limit,
     );
@@ -124,7 +122,7 @@ class DatabaseHelper {
     return await db.delete(
       'car_records',
       where: 'id = ? AND user_id = ?',
-      whereArgs: [id, _currentUserId],
+      whereArgs: [id, currentUserId],
     );
   }
 
@@ -134,7 +132,7 @@ class DatabaseHelper {
       'car_records',
       {'notes': notes},
       where: 'id = ? AND user_id = ?',
-      whereArgs: [id, _currentUserId],
+      whereArgs: [id, currentUserId],
     );
   }
 
@@ -148,7 +146,7 @@ class DatabaseHelper {
       'car_records',
       values,
       where: 'id = ? AND user_id = ?',
-      whereArgs: [id, _currentUserId],
+      whereArgs: [id, currentUserId],
     );
   }
 
@@ -156,12 +154,12 @@ class DatabaseHelper {
     if (record.id == null) return 0;
     final db = await database;
     final map = record.toMap();
-    map['user_id'] = _currentUserId;
+    map['user_id'] = currentUserId;
     return await db.update(
       'car_records',
       map,
       where: 'id = ? AND user_id = ?',
-      whereArgs: [record.id, _currentUserId],
+      whereArgs: [record.id, currentUserId],
     );
   }
 
@@ -170,7 +168,7 @@ class DatabaseHelper {
     await db.delete(
       'car_records',
       where: 'user_id = ?',
-      whereArgs: [_currentUserId],
+      whereArgs: [currentUserId],
     );
   }
 

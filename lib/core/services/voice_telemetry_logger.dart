@@ -72,7 +72,7 @@ class VoiceTelemetryLogger {
       'type': 'session_start',
       'session': session,
       'onDevice': onDevice,
-      if (localeId != null) 'locale': localeId,
+      'locale': ?localeId,
       if (gapMs != null) 'gapMs': double.parse(gapMs),
     });
   }
@@ -90,7 +90,7 @@ class VoiceTelemetryLogger {
       'session': session,
       'kind': kind,
       'detail': detail,
-      if (permanent != null) 'permanent': permanent,
+      'permanent': ?permanent,
     });
   }
 

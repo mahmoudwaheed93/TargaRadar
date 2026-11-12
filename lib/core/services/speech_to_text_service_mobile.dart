@@ -176,11 +176,11 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
           autoPunctuation: false,
           enableHapticFeedback: false,
           onDevice: _useOnDevice,
+          listenFor: const Duration(hours: 1),
+          // Generous 5s endpointing window avoids clipping softer far-field speech mid-plate
+          // while still keeping 0ms capture on partialResults and 6s watchdog auto-stop.
+          pauseFor: const Duration(seconds: 5),
         ),
-        listenFor: const Duration(hours: 1),
-        // Generous 5s endpointing window avoids clipping softer far-field speech mid-plate
-        // while still keeping 0ms capture on partialResults and 6s watchdog auto-stop.
-        pauseFor: const Duration(seconds: 5),
         onResult: (result) {
           if (!_wantListening) return;
           final candidates = <String>[];

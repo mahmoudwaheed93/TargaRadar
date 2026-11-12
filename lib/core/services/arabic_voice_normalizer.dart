@@ -628,10 +628,10 @@ class ArabicVoiceNormalizer {
 
     final rawDigits = tokens[digitIdx];
     final digitLookup = rawDigits.length == 3 ? '${rawDigits}0' : rawDigits;
-    final candidates = [
+    final candidates = {
       ...lookupByDigits(rawDigits),
       if (digitLookup != rawDigits) ...lookupByDigits(digitLookup),
-    ].toSet().toList();
+    }.toList();
     if (candidates.isEmpty) return null;
 
     final nearbyWords = <String>[];

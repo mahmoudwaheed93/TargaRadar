@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart';
-
 /// Represents a vehicle row imported from an Excel sheet for matching & auditing
 class ExcelVehicleItem {
   final String id;

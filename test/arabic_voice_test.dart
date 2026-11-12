@@ -1,5 +1,4 @@
 import 'package:car_logix/core/services/arabic_voice_normalizer.dart';
-import 'package:car_logix/data/models/excel_vehicle_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
