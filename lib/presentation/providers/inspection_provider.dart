@@ -299,6 +299,9 @@ class InspectionProvider extends ChangeNotifier {
       onOrphanNote: _handleOrphanNote,
       onOrphanData: _handleOrphanData,
       onResult: (raw, plates, slots, normalized, isFinal) {
+        if (raw.length < _lastProcessedTranscript.length) {
+          _lastProcessedTranscript = '';
+        }
         if (raw == _lastProcessedTranscript && !isFinal) return;
         _lastProcessedTranscript = isFinal ? '' : raw;
         _currentTranscript = raw;

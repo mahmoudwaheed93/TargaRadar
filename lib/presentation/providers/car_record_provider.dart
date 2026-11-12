@@ -281,6 +281,9 @@ class CarRecordProvider extends ChangeNotifier {
       onOrphanNote: _handleOrphanNote,
       onOrphanData: _handleOrphanData,
       onResult: (rawTranscript, extractedPlates, slots, normalized, isFinal) {
+        if (rawTranscript.length < _lastProcessedTranscript.length) {
+          _lastProcessedTranscript = '';
+        }
         if (rawTranscript == _lastProcessedTranscript && !isFinal) return;
         _lastProcessedTranscript = isFinal ? '' : rawTranscript;
         _currentTranscript = rawTranscript;
@@ -300,8 +303,13 @@ class CarRecordProvider extends ChangeNotifier {
 
         // 1. Process all completed plates immediately (0ms wait)
         final completePlates = extractedPlates.where((p) => p.isComplete).toList();
-        for (final plateData in completePlates) {
-          _ingestPlate(plateData, sortAuditProvider, onPlateAdded);
+        for (int i = 0; i < completePlates.length; i++) {
+          _ingestPlate(
+            completePlates[i],
+            sortAuditProvider,
+            onPlateAdded,
+            isLatestInUtterance: i == completePlates.length - 1,
+          );
         }
 
         // 2. Trailing incomplete plate (e.g. 2-letter digits-first or <4 digits):
@@ -343,8 +351,9 @@ class CarRecordProvider extends ChangeNotifier {
   void _ingestPlate(
     ParsedPlateData plateData,
     ExcelSortAuditProvider sortAuditProvider,
-    Function(String plate, bool isMatched, String carModel) onPlateAdded,
-  ) {
+    Function(String plate, bool isMatched, String carModel) onPlateAdded, {
+    bool isLatestInUtterance = true,
+  }) {
     final norm = ArabicVoiceNormalizer.normalizePlateForMatch(plateData.fullPlate);
     final spokenNote = plateData.detectedNote != '-' ? plateData.detectedNote : null;
 
@@ -352,6 +361,13 @@ class CarRecordProvider extends ChangeNotifier {
       // Fast O(1) pre-check before touching _records list on rapid partial speech ticks
       final spokenBrand = plateData.detectedBrand != '-' ? plateData.detectedBrand : null;
       final cached = _recordByKey[norm];
+      if (isLatestInUtterance && norm != _lastKey) {
+        _lastKey = norm;
+        _lastReadPlate = plateData.fullPlate;
+        _lastReadIsWanted = cached?.isMatched ?? false;
+        _recordsVersion++;
+        notifyListeners();
+      }
       if (cached != null) {
         final brandSame = spokenBrand == null || cached.carType == spokenBrand;
         final noteSame = spokenNote == null || spokenNote == _stickyNote || cached.notes == spokenNote;
