@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'speech_to_text_service_interface.dart';
 import 'voice_telemetry_logger.dart';
 
 class MobileSpeechPlatformService implements SpeechPlatformService {
+  static const MethodChannel _audioChannel = MethodChannel('com.example.car_logix/audio_control');
+
   final stt.SpeechToText _speech = stt.SpeechToText();
   bool _isInitialized = false;
   bool _wantListening = false;
@@ -13,6 +16,8 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
   Function(List<String> candidates, bool isFinal)? _onResult;
   VoidCallback? _onDone;
   VoidCallback? _onFallbackToCloud;
+  void Function(String msg, bool permanent)? _onErrorDelegate;
+  void Function(String status)? _onStatusDelegate;
   String? _localeId;
   Timer? _restartTimer;
   Timer? _watchdogTimer;
@@ -21,6 +26,8 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
   String _lastObservedWords = '';
   bool _hasSpokenInSession = false;
   int _session = 0;
+  int _restartScheduledForSession = -1;
+  int _consecutiveErrors = 0;
 
   // Auto-stop shortly after speaker goes silent so the mic never stays stuck open:
   // 6s after at least one utterance has been spoken, or 10s if completely idle.
@@ -49,58 +56,72 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
         e.contains('download');
   }
 
+  Future<void> _setBeepSuppressed(bool suppress) async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+    try {
+      await _audioChannel.invokeMethod<void>('suppressBeep', {'suppress': suppress});
+    } catch (_) {
+      // Ignore on unsupported devices or headless tests.
+    }
+  }
+
+  void _handleSpeechError(String msg, bool permanent) {
+    debugPrint('Speech error: $msg permanent=$permanent');
+    VoiceTelemetryLogger.instance.logSessionTermination(
+      session: _session,
+      kind: 'error',
+      detail: msg,
+      permanent: permanent,
+    );
+    _onErrorDelegate?.call(msg, permanent);
+    if (!_wantListening) return;
+
+    // Only fall back from offline mode if the offline model itself is missing/unsupported;
+    // never downgrade on normal silence timeouts (speech_timeout / no_match).
+    if (_useOnDevice && _isMissingOfflineModelError(msg)) {
+      debugPrint('On-device speech pack unavailable, switching to Cloud streaming.');
+      _useOnDevice = false;
+      _onFallbackToCloud?.call();
+      _scheduleRestart(isError: false, forcedDelayMs: 0);
+      return;
+    }
+
+    if (_isFatalPermissionError(msg)) {
+      _wantListening = false;
+      _watchdogTimer?.cancel();
+      unawaited(_setBeepSuppressed(false));
+      _onDone?.call();
+      return;
+    }
+
+    final lower = msg.toLowerCase();
+    final isTimeoutNoise = lower.contains('speech_timeout') || lower.contains('no_match');
+    _scheduleRestart(isError: !isTimeoutNoise);
+  }
+
+  void _handleSpeechStatus(String val) {
+    debugPrint('Speech status: $val');
+    _onStatusDelegate?.call(val);
+    if (val == 'done' || val == 'notListening') {
+      VoiceTelemetryLogger.instance.logSessionTermination(
+        session: _session,
+        kind: 'status',
+        detail: val,
+      );
+      if (_wantListening) {
+        // Immediate 0ms restart on clean recognizer completion when continuous listening is active.
+        _scheduleRestart(isError: false, forcedDelayMs: 0);
+      }
+    }
+  }
+
   @override
   Future<bool> initSpeech() async {
     if (_isInitialized) return true;
     try {
       _isInitialized = await _speech.initialize(
-        onError: (val) {
-          final msg = val.errorMsg;
-          debugPrint('Speech error: $msg permanent=${val.permanent}');
-          VoiceTelemetryLogger.instance.logSessionTermination(
-            session: _session,
-            kind: 'error',
-            detail: msg,
-            permanent: val.permanent,
-          );
-          if (!_wantListening) return;
-
-          // Only fall back from offline mode if the offline model itself is missing/unsupported;
-          // never downgrade on normal silence timeouts (speech_timeout / no_match).
-          if (_useOnDevice && _isMissingOfflineModelError(msg)) {
-            debugPrint('On-device speech pack unavailable, switching to Cloud streaming.');
-            _useOnDevice = false;
-            _onFallbackToCloud?.call();
-            _restartSoon(delayMs: 60);
-            return;
-          }
-
-          if (_isFatalPermissionError(msg)) {
-            _wantListening = false;
-            _watchdogTimer?.cancel();
-            _onDone?.call();
-            return;
-          }
-
-          final lower = msg.toLowerCase();
-          final needsBreather = lower.contains('busy') ||
-              lower.contains('client') ||
-              lower.contains('audio');
-          _restartSoon(delayMs: needsBreather ? 160 : 40);
-        },
-        onStatus: (val) {
-          debugPrint('Speech status: $val');
-          if (val == 'done' || val == 'notListening') {
-            VoiceTelemetryLogger.instance.logSessionTermination(
-              session: _session,
-              kind: 'status',
-              detail: val,
-            );
-          }
-          if (_wantListening && (val == 'done' || val == 'notListening')) {
-            _restartSoon(delayMs: 40);
-          }
-        },
+        onError: (val) => _handleSpeechError(val.errorMsg, val.permanent),
+        onStatus: _handleSpeechStatus,
       );
       if (_isInitialized) {
         final locales = await _speech.locales();
@@ -142,15 +163,37 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
     });
   }
 
-  void _restartSoon({int delayMs = 40}) {
+  /// Unified deduplicated restart scheduler: guarantees at most ONE pending restart
+  /// per session termination, restarting cleanly at 0ms unless backing off from errors.
+  void _scheduleRestart({required bool isError, int? forcedDelayMs}) {
     if (!_wantListening || _isStarting) return;
+    if (_restartScheduledForSession == _session && (_restartTimer?.isActive ?? false)) {
+      return;
+    }
+    _restartScheduledForSession = _session;
     _restartTimer?.cancel();
+
+    int delayMs;
+    if (forcedDelayMs != null) {
+      delayMs = forcedDelayMs;
+      if (!isError) _consecutiveErrors = 0;
+    } else if (!isError) {
+      _consecutiveErrors = 0;
+      delayMs = 0;
+    } else {
+      _consecutiveErrors++;
+      const backoff = [40, 120, 300, 600, 1000, 1500];
+      final idx = (_consecutiveErrors - 1).clamp(0, backoff.length - 1);
+      delayMs = backoff[idx];
+    }
+
     _restartTimer = Timer(Duration(milliseconds: delayMs), () {
+      _restartScheduledForSession = -1;
       if (!_wantListening || _isStarting) return;
       if (!_speech.isListening) {
         _listen();
       } else {
-        _restartSoon(delayMs: 80);
+        _scheduleRestart(isError: false, forcedDelayMs: 40);
       }
     });
   }
@@ -196,6 +239,7 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
             }
           }
           if (candidates.isNotEmpty) {
+            _consecutiveErrors = 0;
             final trimmed = result.recognizedWords.trim();
             if (trimmed.isNotEmpty && trimmed != _lastObservedWords) {
               _lastObservedWords = trimmed;
@@ -224,7 +268,7 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
     }
 
     if (needFallback && _wantListening) {
-      _restartSoon(delayMs: 120);
+      _scheduleRestart(isError: true);
     }
   }
 
@@ -234,7 +278,11 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
     required VoidCallback onDone,
     bool preferOnDevice = false,
     VoidCallback? onFallbackToCloud,
+    void Function(String msg, bool permanent)? onError,
+    void Function(String status)? onStatus,
   }) async {
+    _onErrorDelegate = onError;
+    _onStatusDelegate = onStatus;
     final available = await initSpeech();
     if (!available) {
       onDone();
@@ -246,7 +294,10 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
     _wantListening = true;
     _useOnDevice = preferOnDevice;
     _hasSpokenInSession = false;
+    _consecutiveErrors = 0;
+    _restartScheduledForSession = -1;
     _lastSpeechActivityAt = DateTime.now();
+    unawaited(_setBeepSuppressed(true));
     _startWatchdog();
     await _listen();
   }
@@ -259,10 +310,10 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
       _restartTimer?.cancel();
       if (_speech.isListening) {
         _speech.stop().then((_) {
-          if (_wantListening) _restartSoon(delayMs: 40);
+          if (_wantListening) _scheduleRestart(isError: false, forcedDelayMs: 0);
         });
       } else {
-        _restartSoon(delayMs: 40);
+        _scheduleRestart(isError: false, forcedDelayMs: 0);
       }
     }
   }
@@ -272,8 +323,10 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
     _wantListening = false;
     _isStarting = false;
     _session++;
+    _restartScheduledForSession = -1;
     _restartTimer?.cancel();
     _watchdogTimer?.cancel();
+    unawaited(_setBeepSuppressed(false));
     if (_speech.isListening) {
       await _speech.stop();
     }

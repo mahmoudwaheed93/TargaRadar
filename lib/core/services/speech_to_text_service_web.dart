@@ -19,6 +19,8 @@ class WebSpeechPlatformService implements SpeechPlatformService {
     required VoidCallback onDone,
     bool preferOnDevice = false,
     VoidCallback? onFallbackToCloud,
+    void Function(String msg, bool permanent)? onError,
+    void Function(String status)? onStatus,
   }) async {
     _isListening = true;
   }
