@@ -349,5 +349,44 @@ void main() {
       expect(ArabicVoiceNormalizer.isPlateUpgrade('د ب ق 2810', 'د ب ق 9999'), isFalse);
       expect(ArabicVoiceNormalizer.isPlateUpgrade('د ب ق 2810', 'د ب ق 2810'), isFalse);
     });
+
+    test('راعين / اراعين decode to ا ر ع at 0ms (both with digits and live slots)', () {
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('راعين 2816').first.fullPlate, equals('ا ر ع 2816'));
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('2816 راعين').first.fullPlate, equals('ا ر ع 2816'));
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('اراعين 2816').first.fullPlate, equals('ا ر ع 2816'));
+
+      final slots = ArabicVoiceNormalizer.extractLiveSlots(
+        ArabicVoiceNormalizer.normalizeArabicSpoken('راعين'),
+        const [],
+      );
+      expect(slots['l1'], equals('ا'));
+      expect(slots['l2'], equals('ر'));
+      expect(slots['l3'], equals('ع'));
+
+      final fusedSlots = ArabicVoiceNormalizer.extractLiveSlots(
+        ArabicVoiceNormalizer.normalizeArabicSpoken('رانونيا'),
+        const [],
+      );
+      expect(fusedSlots['l1'], equals('ر'));
+      expect(fusedSlots['l2'], equals('ن'));
+      expect(fusedSlots['l3'], equals('ي'));
+    });
+
+    test('Digit-Pivot Rescue supports unique 3-letter permutation swap', () {
+      final sheetPlates = ['ر ا ع 2816'];
+      final rescued = ArabicVoiceNormalizer.findPhoneticSheetMatchIndex(
+        'ا ر ع 2816',
+        const [0],
+        (i) => sheetPlates[i],
+      );
+      expect(rescued, equals(0));
+
+      final tied = ArabicVoiceNormalizer.findPhoneticSheetMatchIndex(
+        'ا ر ع 2816',
+        const [0, 1],
+        (i) => const ['ر ا ع 2816', 'ع ر ا 2816'][i],
+      );
+      expect(tied, isNull);
+    });
   });
 }

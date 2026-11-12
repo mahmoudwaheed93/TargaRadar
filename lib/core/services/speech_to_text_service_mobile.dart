@@ -18,9 +18,13 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
 
   DateTime _lastSpeechActivityAt = DateTime.now();
   String _lastObservedWords = '';
+  bool _hasSpokenInSession = false;
   int _session = 0;
 
-  static const Duration _maxContinuousSilence = Duration(seconds: 25);
+  // Auto-stop shortly after speaker goes silent so the mic never stays stuck open:
+  // 6s after at least one utterance has been spoken, or 10s if completely idle.
+  static const Duration _postSpeechSilence = Duration(seconds: 6);
+  static const Duration _initialIdleSilence = Duration(seconds: 10);
 
   @override
   int get session => _session;
@@ -106,15 +110,14 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
 
   void _startWatchdog() {
     _watchdogTimer?.cancel();
-    _watchdogTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+    _watchdogTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!_wantListening) {
         _watchdogTimer?.cancel();
         return;
       }
-      // Auto-stop after 25s of continuous total silence so forgetting the mic
-      // open does not drain battery or accumulate street noise.
-      if (DateTime.now().difference(_lastSpeechActivityAt) >= _maxContinuousSilence) {
-        debugPrint('Speech watchdog: 25s continuous silence -> stopping mic.');
+      final silenceLimit = _hasSpokenInSession ? _postSpeechSilence : _initialIdleSilence;
+      if (DateTime.now().difference(_lastSpeechActivityAt) >= silenceLimit) {
+        debugPrint('Speech watchdog: ${silenceLimit.inSeconds}s continuous silence -> auto-stopping mic.');
         unawaited(stopListening(notifyDone: true));
         return;
       }
@@ -156,9 +159,9 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
           onDevice: _useOnDevice,
         ),
         listenFor: const Duration(hours: 1),
-        // Short 3s silence window refreshes Google STT cleanly between cars
-        // while keeping 0ms interruption during active speech.
-        pauseFor: const Duration(seconds: 3),
+        // Generous 5s endpointing window avoids clipping softer far-field speech mid-plate
+        // while still keeping 0ms capture on partialResults and 6s watchdog auto-stop.
+        pauseFor: const Duration(seconds: 5),
         onResult: (result) {
           if (!_wantListening) return;
           final candidates = <String>[];
@@ -177,6 +180,7 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
             final trimmed = result.recognizedWords.trim();
             if (trimmed.isNotEmpty && trimmed != _lastObservedWords) {
               _lastObservedWords = trimmed;
+              _hasSpokenInSession = true;
               _lastSpeechActivityAt = DateTime.now();
             }
             _onResult?.call(candidates, result.finalResult);
@@ -222,6 +226,7 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
     _onFallbackToCloud = onFallbackToCloud;
     _wantListening = true;
     _useOnDevice = preferOnDevice;
+    _hasSpokenInSession = false;
     _lastSpeechActivityAt = DateTime.now();
     _startWatchdog();
     await _listen();

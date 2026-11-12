@@ -37,26 +37,26 @@ jobs:
       - name: Build APK (Release)
         run: |
           flutter build apk --release
-          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/AIMS-Mobile-v1.1.2.apk
+          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/AIMS-Mobile-v1.1.3.apk
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
         with:
-          tag_name: v1.1.2
-          name: "AIMS-Mobile v1.1.2 (Ultra-Fast Fused-Word Decoder + Digit-Pivot Lisp Rescue + 20-Engineer Audit)"
+          tag_name: v1.1.3
+          name: "AIMS-Mobile v1.1.3 (Letter-First Plate Slots + راعين->ا ر ع Fix + 6s Auto-Stop + Far-Field Support)"
           draft: false
           prerelease: false
           make_latest: true
           body: |
-            ## 🚗 AIMS-Mobile / TargaRadar APK Release v1.1.2
-            - Fused Arabic letter-name decoder ("رانونيا 2816" -> "ر ن ي 2816", "سينصادعين 3253" -> "س ص ع 3253") in 0ms for ultra-fast speech.
-            - Digit-Pivot Phonetic Sheet Rescue ("ذ ب ن 2816" snaps automatically to sheet "د ب ن 2816" when unique phonetic match exists).
-            - Enhanced Groq AI fallback prompt for slurred/fast speech + Hugging Face runtime fallback.
-            - Strict 3-letter-only rule, 3-digit zero-padding (`123` -> `1230`), 25s total-silence auto-stop, and full 20-engineer verification.
+            ## 🚗 AIMS-Mobile / TargaRadar APK Release v1.1.3
+            - Fixed 7-slot RTL display order: Letters now strictly appear first on the right (`l1 l2 l3`) followed by Digits LTR (`d1 d2 d3 d4`).
+            - Removed distracting LiveSpeechTicker bar below the slots per user request.
+            - Fixed `"راعين"` / `"اراعين"` / `"الراعين"` ASR merge to decode cleanly into `ا ر ع`, plus unique 3-letter permutation rescue against Excel.
+            - Upgraded auto-stop to 6 seconds after speech stops (10s if idle) and widened far-field `pauseFor` to 5s.
           files: |
             build/app/outputs/flutter-apk/app-release.apk
-            build/app/outputs/flutter-apk/AIMS-Mobile-v1.1.2.apk
+            build/app/outputs/flutter-apk/AIMS-Mobile-v1.1.3.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

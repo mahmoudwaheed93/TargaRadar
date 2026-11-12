@@ -75,7 +75,7 @@ class AiPlateRefiner {
       'EVERY plate MUST have EXACTLY 3 Arabic letters (never 2 or 4) and 3 or 4 digits. '
       'If only 3 digits are spoken after 3 letters (e.g. "د ب ن 123"), append a trailing 0 ("1230"). '
       'CRITICAL: Fast speech often fuses letter names into distorted words near numbers — decode them back to 3 single letters! '
-      'Examples: "رانونيا 2816" -> letters:"ر ن ي", digits:"2816"; "سينصادعين 4512" -> letters:"س ص ع", digits:"4512"; "دالبانون 1000" -> letters:"د ب ن", digits:"1000". '
+      'Examples: "رانونيا 2816" -> letters:"ر ن ي", digits:"2816"; "راعين 2816" -> letters:"ا ر ع", digits:"2816"; "سينصادعين 4512" -> letters:"س ص ع", digits:"4512"; "دالبانون 1000" -> letters:"د ب ن", digits:"1000". '
       'Convert spoken numbers to digits (e.g. "تلات تلاف متين تلاته وخمسين" -> "3253", "الفين تمانية مية واحد وستين" -> "2861", "زيرو" -> "0"). '
       'Convert spoken letter names to 3 space-separated single Arabic letters (e.g. "به نون قاف" -> "ب ن ق", "سين" -> "س", "دال" -> "د"). '
       'Only set "note" if explicit remark trigger (ملحوظة/ملاحظة/نوت/اكتب/سجل) or car condition (مركونة/واقفة غلط/عطلانة/مصدومة/مخالفة/ماشية) is spoken; otherwise note MUST be "". '

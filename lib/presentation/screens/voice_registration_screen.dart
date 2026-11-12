@@ -4,7 +4,6 @@ import '../../core/constants/app_colors.dart';
 import '../../core/services/arabic_voice_normalizer.dart';
 import '../../core/services/sound_alert_service.dart';
 import '../../core/utils/external_actions.dart';
-import '../../core/widgets/live_speech_ticker.dart';
 import '../../data/models/car_record_model.dart';
 import '../../data/models/excel_vehicle_model.dart';
 import '../providers/auth_provider.dart';
@@ -799,42 +798,38 @@ class _VoiceRegistrationScreenState extends State<VoiceRegistrationScreen> {
                 const Text('اللوحة الحالية • جاري الالتقاط بالصوت', style: TextStyle(color: AppColors.textMutedDark, fontSize: 11)),
                 const SizedBox(height: 6),
 
-                // 7-Slots Interactive Visualizer (isolated RepaintBoundary + Selector)
+                // 7-Slots Interactive Visualizer (Letters FIRST on Right in RTL, Digits AFTER in LTR)
                 RepaintBoundary(
                   child: Selector<CarRecordProvider, Map<String, String>>(
                     selector: (_, p) => p.currentSlots,
                     builder: (_, slots, __) => Row(
+                      textDirection: TextDirection.rtl,
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        _buildBigSlot(slots['d4'] ?? '-', isDigit: true),
-                        const SizedBox(width: 4),
-                        _buildBigSlot(slots['d3'] ?? '-', isDigit: true),
-                        const SizedBox(width: 4),
-                        _buildBigSlot(slots['d2'] ?? '-', isDigit: true),
-                        const SizedBox(width: 4),
-                        _buildBigSlot(slots['d1'] ?? '-', isDigit: true),
-                        const SizedBox(width: 8),
-                        Container(width: 4, height: 4, decoration: const BoxDecoration(color: Color(0xFF64748B), shape: BoxShape.circle)),
-                        const SizedBox(width: 8),
-                        _buildBigSlot(slots['l3'] ?? '-'),
+                        _buildBigSlot(slots['l1'] ?? '-'),
                         const SizedBox(width: 4),
                         _buildBigSlot(slots['l2'] ?? '-'),
                         const SizedBox(width: 4),
-                        _buildBigSlot(slots['l1'] ?? '-'),
+                        _buildBigSlot(slots['l3'] ?? '-'),
+                        const SizedBox(width: 8),
+                        Container(width: 4, height: 4, decoration: const BoxDecoration(color: Color(0xFF64748B), shape: BoxShape.circle)),
+                        const SizedBox(width: 8),
+                        Row(
+                          textDirection: TextDirection.ltr,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _buildBigSlot(slots['d1'] ?? '-', isDigit: true),
+                            const SizedBox(width: 4),
+                            _buildBigSlot(slots['d2'] ?? '-', isDigit: true),
+                            const SizedBox(width: 4),
+                            _buildBigSlot(slots['d3'] ?? '-', isDigit: true),
+                            const SizedBox(width: 4),
+                            _buildBigSlot(slots['d4'] ?? '-', isDigit: true),
+                          ],
+                        ),
                       ],
                     ),
                   ),
-                ),
-                Selector<CarRecordProvider, (bool, String)>(
-                  selector: (_, p) => (p.isListening, p.currentTranscript),
-                  builder: (_, st, __) {
-                    if (!st.$1 && st.$2.isEmpty) return const SizedBox.shrink();
-                    return LiveSpeechTicker(
-                      isListening: st.$1,
-                      transcript: st.$2,
-                      margin: const EdgeInsets.only(top: 8),
-                    );
-                  },
                 ),
               ],
             ),

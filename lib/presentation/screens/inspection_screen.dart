@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/services/sound_alert_service.dart';
 import '../../core/utils/external_actions.dart';
-import '../../core/widgets/live_speech_ticker.dart';
 import '../providers/car_record_provider.dart';
 import '../providers/inspection_provider.dart';
 
@@ -423,16 +422,23 @@ class _InspectionScreenState extends State<InspectionScreen> {
                             builder: (_, slots, __) => SingleChildScrollView(
                               scrollDirection: Axis.horizontal,
                               child: Row(
+                                textDirection: TextDirection.rtl,
                                 children: [
-                                  for (final k in ['d4', 'd3', 'd2', 'd1']) ...[
-                                    _slot(slots[k] ?? '-', digit: true),
-                                    const SizedBox(width: 4),
-                                  ],
-                                  const SizedBox(width: 4),
-                                  for (final k in ['l3', 'l2', 'l1']) ...[
+                                  for (final k in ['l1', 'l2', 'l3']) ...[
                                     _slot(slots[k] ?? '-'),
                                     const SizedBox(width: 4),
                                   ],
+                                  const SizedBox(width: 4),
+                                  Row(
+                                    textDirection: TextDirection.ltr,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      for (final k in ['d1', 'd2', 'd3', 'd4']) ...[
+                                        _slot(slots[k] ?? '-', digit: true),
+                                        const SizedBox(width: 4),
+                                      ],
+                                    ],
+                                  ),
                                 ],
                               ),
                             ),
@@ -469,18 +475,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
                     ],
                   ),
                 ),
-                Selector<InspectionProvider, (bool, String)>(
-                  selector: (_, p) => (p.isListening, p.currentTranscript),
-                  builder: (_, st, __) {
-                    if (!st.$1 && st.$2.isEmpty) return const SizedBox.shrink();
-                    return LiveSpeechTicker(
-                      isListening: st.$1,
-                      transcript: st.$2,
-                      margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-                    );
-                  },
-                ),
-
                 // Toggle Mode (صوت مباشر / إدخال نصي)
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),

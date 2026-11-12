@@ -243,6 +243,8 @@ class ArabicVoiceNormalizer {
 
   /// Canonical spoken letter names (excludes Egyptian everyday words like ده، لا، يا، ما، تا)
   static final List<MapEntry<RegExp, String>> arLetterNames = [
+    // Common fast/far-field ASR collapses for whole 3-letter combinations
+    MapEntry(RegExp(_w('الراعين|اراعين|ارعين|راعين')), 'ا ر ع'),
     MapEntry(RegExp(_w('الف')), 'ا'),
     MapEntry(RegExp(_w('باء|به|با')), 'ب'),
     MapEntry(RegExp(_w('تاء')), 'ت'),
@@ -539,7 +541,26 @@ class ArabicVoiceNormalizer {
       }
     }
 
-    return tied ? null : winnerIdx;
+    if (!tied && winnerIdx != null) return winnerIdx;
+    if (tied) return null;
+
+    // Stage 2: Unique 3-letter permutation rescue (e.g. ASR swapped "ر ا ع" vs sheet "ا ر ع" on identical digits)
+    final spokenSorted = (spokenLetters.split('')..sort()).join();
+    int? permWinner;
+    int permCount = 0;
+    for (final rowIdx in digitCandidates) {
+      final candidateKey = plateKey(plateAt(rowIdx));
+      final candLetters = candidateKey.replaceAll(RegExp(r'[^ا-ي]'), '');
+      if (candLetters.length != 3) continue;
+      final candSorted = (candLetters.split('')..sort()).join();
+      if (candSorted == spokenSorted) {
+        permWinner = rowIdx;
+        permCount++;
+        if (permCount > 1) return null;
+      }
+    }
+
+    return permCount == 1 ? permWinner : null;
   }
 
   static bool _isLetter(String t) => _singleLetter.hasMatch(t);
@@ -1032,7 +1053,13 @@ class ArabicVoiceNormalizer {
           liveLetters.add(t);
         } else if (_isGluedLetters(t)) {
           liveLetters.addAll(t.split(''));
-        } else if (_isDigits(t)) {
+        } else if (!_isDigits(t) && !_nonLetterTokens.contains(t)) {
+          final fused = _splitFusedToThreeLetters(t);
+          if (fused != null) {
+            liveLetters.addAll(fused);
+          }
+        }
+        if (_isDigits(t)) {
           liveDigits.addAll(t.split(''));
         }
       }
