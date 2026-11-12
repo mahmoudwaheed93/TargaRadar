@@ -37,26 +37,25 @@ jobs:
       - name: Build APK (Release)
         run: |
           flutter build apk --release
-          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/AIMS-Mobile-v1.1.3.apk
+          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/AIMS-Mobile-v1.1.4.apk
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
         with:
-          tag_name: v1.1.3
-          name: "AIMS-Mobile v1.1.3 (Letter-First Plate Slots + راعين->ا ر ع Fix + 6s Auto-Stop + Far-Field Support)"
+          tag_name: v1.1.4
+          name: "AIMS-Mobile v1.1.4 (Universal Word-Merged 3-Letter Decoder + Sheet Subsequence Rescue + Letter-First UI)"
           draft: false
           prerelease: false
           make_latest: true
           body: |
-            ## 🚗 AIMS-Mobile / TargaRadar APK Release v1.1.3
-            - Fixed 7-slot RTL display order: Letters now strictly appear first on the right (`l1 l2 l3`) followed by Digits LTR (`d1 d2 d3 d4`).
-            - Removed distracting LiveSpeechTicker bar below the slots per user request.
-            - Fixed `"راعين"` / `"اراعين"` / `"الراعين"` ASR merge to decode cleanly into `ا ر ع`, plus unique 3-letter permutation rescue against Excel.
-            - Upgraded auto-stop to 6 seconds after speech stops (10s if idle) and widened far-field `pauseFor` to 5s.
+            ## 🚗 AIMS-Mobile / TargaRadar APK Release v1.1.4
+            - Universal 0ms decoder for ANY 3-letter Arabic ASR merge ("انوي" -> "ا ن ي", "راعين" -> "ا ر ع", "هاني" -> "ه ن ي", "كلام" -> "ك ل م", "سالم" -> "س ل م", "حامد" -> "ح م د", "رامي" -> "ر م ي") both live and with digits.
+            - 0ms Vowel-Tolerant Sheet Rescue ("سعود 2816" -> "س ع د 2816", "احمد 2816" -> "ح م د 2816") across both Registration & Inspection modes.
+            - Letter-first RTL 7-slot visualizer (`l1 l2 l3` on right, LTR `d1 d2 d3 d4` on left), LiveSpeechTicker strip removed, 6s post-speech auto-stop, and 5s far-field endpointing.
           files: |
             build/app/outputs/flutter-apk/app-release.apk
-            build/app/outputs/flutter-apk/AIMS-Mobile-v1.1.3.apk
+            build/app/outputs/flutter-apk/AIMS-Mobile-v1.1.4.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

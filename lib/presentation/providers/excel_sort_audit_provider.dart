@@ -313,6 +313,16 @@ class ExcelSortAuditProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 0ms local rescue for unparsed STT words (e.g. "سعود 2816", "انوي 2816") against loaded sheet
+  ParsedPlateData? rescueUnparsedPlate(String unparsedTail) {
+    if (_sheetItems.isEmpty) return null;
+    return ArabicVoiceNormalizer.rescueUnparsedTailAgainstSheet(
+      unparsedTail,
+      (digits) => _byDigits[digits] ?? const [],
+      (idx) => _sheetItems[idx].rawPlate,
+    );
+  }
+
   /// Match a spoken or manually entered plate against the sheet (O(1) + phonetic digit-pivot rescue)
   AuditedLogItem processAuditPlate(String fullPlate, {String? detectedBrand, String? detectedNote}) {
     var normPlate = ArabicVoiceNormalizer.plateKey(fullPlate);

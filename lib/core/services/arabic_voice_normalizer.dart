@@ -97,6 +97,9 @@ class ArabicVoiceNormalizer {
     'جديد', 'قديم', 'صفر', 'مكرر', 'كنسل', 'الغي', 'الغاء', 'حذف', 'مسح', 'وقف', 'ايقاف', 'ابدا', 'بدايه', 'بداية', 'انتهي', 'انتهت',
     'تمام', 'حاضر', 'ماشي', 'اوكي', 'شكرا', 'يلا', 'بص', 'شوف',
     'ملاكي', 'اجره', 'نقل', 'بيك', 'يا', 'يه', 'ها', 'نا', 'تا', 'تي', 'سا',
+    'عادي', 'عشان', 'بتاع', 'بتوع', 'معايا', 'ياخد', 'هات', 'خلي',
+    'سريع', 'مقفول', 'مفتوح', 'واقف', 'ماشي', 'واقفه', 'ماشيه',
+    'عربيه', 'عربية', 'لوحه', 'لوحة', 'نمره', 'نمرة',
   };
 
   static String _normWord(String w) => w
@@ -404,7 +407,7 @@ class ArabicVoiceNormalizer {
     'باء': 'ب', 'با': 'ب', 'به': 'ب',
     'تاء': 'ت', 'تا': 'ت', 'ته': 'ت',
     'ثاء': 'ث', 'ثا': 'ث', 'ثه': 'ث',
-    'جيم': 'ج', 'جي': 'ج',
+    'جيم': 'ج', 'جي': 'ج', 'جا': 'ج',
     'حاء': 'ح', 'حا': 'ح', 'حه': 'ح',
     'خاء': 'خ', 'خا': 'خ', 'خه': 'خ',
     'دال': 'د', 'دا': 'د',
@@ -451,20 +454,20 @@ class ArabicVoiceNormalizer {
     return false;
   }
 
-  /// Splits a fused spoken letter-name word (like "رانونيا") into 3 isolated
-  /// Arabic letters if >= 2 syllables are multi-character spoken letter names.
+  /// Splits a fused spoken letter-name word (like "رانونيا" or "انوي") into 3 isolated
+  /// Arabic letters when >= 1 spoken letter-name syllable is present (maximizing multi-char matches).
   static List<String>? _splitFusedToThreeLetters(String word) {
     if (word.length < 4 || word.length > 14) return null;
     if (_nonLetterTokens.contains(word)) return null;
     if (!RegExp(r'^[ا-ي]+$').hasMatch(word)) return null;
 
     List<String>? bestLetters;
-    int bestMultiCount = -1;
+    int bestMultiCount = 0;
 
     void dfs(int pos, List<String> acc, int multiCount) {
       if (acc.length > 3) return;
       if (pos == word.length) {
-        if (acc.length == 3 && multiCount >= 2 && multiCount > bestMultiCount) {
+        if (acc.length == 3 && multiCount >= 1 && multiCount > bestMultiCount) {
           bestMultiCount = multiCount;
           bestLetters = List<String>.from(acc);
         }
@@ -561,6 +564,127 @@ class ArabicVoiceNormalizer {
     }
 
     return permCount == 1 ? permWinner : null;
+  }
+
+  static const Set<String> _softVowels = {'ا', 'و', 'ي', 'ه'};
+
+  static int _orderedWordPlateMatchScore(String word, String candLetters) {
+    if (candLetters.length != 3 || word.length < 3 || word.length > 8) return 0;
+
+    int bestScore = 0;
+    void search(int wi, int ci, int score) {
+      if (ci == 3) {
+        // Every leftover character after matching all 3 consonants must be a soft vowel/glide
+        for (int rem = wi; rem < word.length; rem++) {
+          if (!_softVowels.contains(word[rem])) return;
+        }
+        if (score >= 5 && score > bestScore) {
+          bestScore = score;
+        }
+        return;
+      }
+      if (wi >= word.length) return;
+      final wCh = word[wi];
+      final cCh = candLetters[ci];
+
+      // Option 1: match current word char to current plate letter
+      if (wCh == cCh) {
+        search(wi + 1, ci + 1, score + 2);
+      } else if (_arePhoneticallyClose(wCh, cCh)) {
+        search(wi + 1, ci + 1, score + 1);
+      }
+
+      // Option 2: skip soft injected vowel (ا/و/ي/ه)
+      if (_softVowels.contains(wCh)) {
+        search(wi + 1, ci, score);
+      }
+    }
+
+    search(0, 0, 0);
+    return bestScore;
+  }
+
+  /// 0ms local rescue when Google STT turns any 3 spoken letters into a real-looking
+  /// Arabic word with injected vowels (e.g. "سعود 2816", "احمد 2816", "انوي 2816")
+  /// and the reference Excel sheet has a unique candidate with matching digits.
+  static ParsedPlateData? rescueUnparsedTailAgainstSheet(
+    String unparsedTail,
+    List<int> Function(String digits) lookupByDigits,
+    String Function(int rowIdx) plateAt,
+  ) {
+    if (unparsedTail.trim().isEmpty) return null;
+    final tokens = unparsedTail.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+    if (tokens.length < 2) return null;
+
+    int digitIdx = -1;
+    for (int i = tokens.length - 1; i >= 0; i--) {
+      if (_isPlateDigits(tokens[i])) {
+        digitIdx = i;
+        break;
+      }
+    }
+    if (digitIdx == -1) return null;
+
+    final rawDigits = tokens[digitIdx];
+    final digitLookup = rawDigits.length == 3 ? '${rawDigits}0' : rawDigits;
+    final candidates = [
+      ...lookupByDigits(rawDigits),
+      if (digitLookup != rawDigits) ...lookupByDigits(digitLookup),
+    ].toSet().toList();
+    if (candidates.isEmpty) return null;
+
+    final nearbyWords = <String>[];
+    for (int k = digitIdx - 1; k >= 0 && nearbyWords.length < 2; k--) {
+      final w = tokens[k];
+      if (_isDigits(w) || _nonLetterTokens.contains(w)) continue;
+      if (RegExp(r'^[ا-ي]{1,7}$').hasMatch(w)) {
+        nearbyWords.insert(0, w);
+      }
+    }
+    for (int k = digitIdx + 1; k < tokens.length && nearbyWords.length < 2; k++) {
+      final w = tokens[k];
+      if (_isDigits(w) || _nonLetterTokens.contains(w)) continue;
+      if (RegExp(r'^[ا-ي]{1,7}$').hasMatch(w)) {
+        nearbyWords.add(w);
+      }
+    }
+    final word = nearbyWords.join('');
+    if (word.length < 3 || word.length > 8) return null;
+
+    int? winnerIdx;
+    int bestScore = 0;
+    bool tied = false;
+
+    for (final rowIdx in candidates) {
+      final rawSheetPlate = plateAt(rowIdx);
+      final candKey = plateKey(rawSheetPlate);
+      final candLetters = candKey.replaceAll(RegExp(r'[^ا-ي]'), '');
+      if (candLetters.length != 3) continue;
+
+      final score = _orderedWordPlateMatchScore(word, candLetters);
+      if (score <= 0) continue;
+      if (score > bestScore) {
+        bestScore = score;
+        winnerIdx = rowIdx;
+        tied = false;
+      } else if (score == bestScore && winnerIdx != null) {
+        tied = true;
+      }
+    }
+
+    if (tied || winnerIdx == null) return null;
+    final matchedRaw = plateAt(winnerIdx);
+    final matchedKey = plateKey(matchedRaw);
+    final mLetters = matchedKey.replaceAll(RegExp(r'[^ا-ي]'), '').split('').join(' ');
+    final mDigits = matchedKey.replaceAll(RegExp(r'[^\d]'), '');
+    if (mLetters.isEmpty || mDigits.isEmpty) return null;
+
+    return ParsedPlateData(
+      fullPlate: '$mLetters $mDigits',
+      letters: mLetters,
+      digits: mDigits,
+      isComplete: true,
+    );
   }
 
   static bool _isLetter(String t) => _singleLetter.hasMatch(t);

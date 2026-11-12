@@ -346,9 +346,18 @@ class CarRecordProvider extends ChangeNotifier {
           }
         }
 
-        // 3. AI fallback strictly on the unparsed speech tail
+        // 3. 0ms local Excel vowel-injected word rescue, else AI fallback on unparsed tail
         final unparsedTail = ArabicVoiceNormalizer.extractUnparsedTail(normalized);
-        _scheduleAiFallback(rawTranscript, unparsedTail, sortAuditProvider, onPlateAdded);
+        final rescuedFromSheet = unparsedTail.isNotEmpty
+            ? sortAuditProvider.rescueUnparsedPlate(unparsedTail)
+            : null;
+        if (rescuedFromSheet != null) {
+          _aiTimer?.cancel();
+          _ingestPlate(rescuedFromSheet, sortAuditProvider, onPlateAdded);
+          _applySlotsFromPlate(rescuedFromSheet);
+        } else {
+          _scheduleAiFallback(rawTranscript, unparsedTail, sortAuditProvider, onPlateAdded);
+        }
 
         notifyListeners();
       },

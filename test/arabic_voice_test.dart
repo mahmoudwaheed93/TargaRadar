@@ -388,5 +388,51 @@ void main() {
       );
       expect(tied, isNull);
     });
+
+    test('Universal 3-letter word-merge decoding (انوي، هاني، كلام، سالم، حامد، رامي) at 0ms while rejecting دبنق', () {
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('انوي 2816').first.fullPlate, equals('ا ن ي 2816'));
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('2816 انوي').first.fullPlate, equals('ا ن ي 2816'));
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('هاني 2816').first.fullPlate, equals('ه ن ي 2816'));
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('كلام 2816').first.fullPlate, equals('ك ل م 2816'));
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('سالم 2816').first.fullPlate, equals('س ل م 2816'));
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('حامد 2816').first.fullPlate, equals('ح م د 2816'));
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('رامي 2816').first.fullPlate, equals('ر م ي 2816'));
+
+      final liveAnwi = ArabicVoiceNormalizer.extractLiveSlots(
+        ArabicVoiceNormalizer.normalizeArabicSpoken('انوي'),
+        const [],
+      );
+      expect(liveAnwi['l1'], equals('ا'));
+      expect(liveAnwi['l2'], equals('ن'));
+      expect(liveAnwi['l3'], equals('ي'));
+
+      // Invalid 4-consonant plate with no vowelized letter-name syllable remains rejected
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('دبنق 2816'), isEmpty);
+    });
+
+    test('rescueUnparsedTailAgainstSheet rescues vowel-injected words cleanly against Excel without slicing 4-consonant plates', () {
+      final sheet = ['س ع د 2816', 'ح م د 5555', 'د ب ن 2816'];
+      final res1 = ArabicVoiceNormalizer.rescueUnparsedTailAgainstSheet(
+        'سعود 2816',
+        (d) => d == '2816' ? const [0, 2] : const [],
+        (i) => sheet[i],
+      );
+      expect(res1?.fullPlate, equals('س ع د 2816'));
+
+      final res2 = ArabicVoiceNormalizer.rescueUnparsedTailAgainstSheet(
+        '5555 احمد',
+        (d) => d == '5555' ? const [1] : const [],
+        (i) => sheet[i],
+      );
+      expect(res2?.fullPlate, equals('ح م د 5555'));
+
+      // 4th consonant 'ق' in 'دبنق' must not falsely slice to 'د ب ن 2816'
+      final resBad = ArabicVoiceNormalizer.rescueUnparsedTailAgainstSheet(
+        'دبنق 2816',
+        (d) => d == '2816' ? const [0, 2] : const [],
+        (i) => sheet[i],
+      );
+      expect(resBad, isNull);
+    });
   });
 }

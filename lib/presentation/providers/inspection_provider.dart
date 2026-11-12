@@ -356,9 +356,22 @@ class InspectionProvider extends ChangeNotifier {
           }
         }
 
-        // 3. Fast AI fallback strictly on the unparsed speech tail
+        // 3. 0ms local Excel vowel-injected word rescue, else AI fallback on unparsed tail
         final unparsedTail = ArabicVoiceNormalizer.extractUnparsedTail(normalized);
-        _scheduleAiFallback(raw, unparsedTail, onMatch);
+        final rescuedFromSheet = (unparsedTail.isNotEmpty && _table != null)
+            ? ArabicVoiceNormalizer.rescueUnparsedTailAgainstSheet(
+                unparsedTail,
+                (digits) => _byDigits[digits] ?? const [],
+                (idx) => _table!.rows[idx][_table!.plateCol],
+              )
+            : null;
+        if (rescuedFromSheet != null) {
+          _aiTimer?.cancel();
+          _ingestInspectionPlate(rescuedFromSheet, onMatch);
+          _slots = ArabicVoiceNormalizer.extractSlotsFromPlates([rescuedFromSheet]);
+        } else {
+          _scheduleAiFallback(raw, unparsedTail, onMatch);
+        }
 
         notifyListeners();
       },
