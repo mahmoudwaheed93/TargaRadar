@@ -77,6 +77,17 @@ class InspectionProvider extends ChangeNotifier {
   DateTime? _lastIngestedAt;
   String _lastProcessedTranscript = '';
   final PlateUtteranceStitcher _stitcher = PlateUtteranceStitcher();
+  bool _disposed = false;
+  bool _notifyScheduled = false;
+
+  void _scheduleNotify() {
+    if (_disposed || _notifyScheduled) return;
+    _notifyScheduled = true;
+    Future.microtask(() {
+      _notifyScheduled = false;
+      if (!_disposed) notifyListeners();
+    });
+  }
   String _currentTranscript = '';
   String get currentTranscript => _currentTranscript;
   int _entriesVersion = 0;
@@ -391,7 +402,7 @@ class InspectionProvider extends ChangeNotifier {
           _scheduleAiFallback(raw, unparsedTail, onMatch);
         }
 
-        notifyListeners();
+        _scheduleNotify();
       },
       onDone: () {
         _flushPendingIncompletePlate();
@@ -456,6 +467,8 @@ class InspectionProvider extends ChangeNotifier {
     return matchedCount;
   }
 
+  static final RegExp _digitCountRegex = RegExp(r'\d');
+
   void _scheduleAiFallback(
     String rawTranscript,
     String unparsedTail,
@@ -463,7 +476,7 @@ class InspectionProvider extends ChangeNotifier {
   ) {
     _aiTimer?.cancel();
     if (unparsedTail.isEmpty || !AiPlateRefiner.instance.isEnabled) return;
-    final digitCount = RegExp(r'\d').allMatches(unparsedTail).length;
+    final digitCount = _digitCountRegex.allMatches(unparsedTail).length;
     if (digitCount < 3) return;
     final input = unparsedTail;
     _aiTimer = Timer(_aiDebounce, () async {
@@ -600,6 +613,7 @@ class InspectionProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _isListening = false;
     _pendingIncompletePlate = null;
     _ticker?.cancel();

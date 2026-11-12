@@ -19,6 +19,11 @@ class SpeechService {
   final ValueNotifier<bool> preferOnDeviceNotifier = ValueNotifier<bool>(true);
   bool _prefLoaded = false;
 
+  // Incremental O(1) parsing & early duplicate filtering state
+  String _lastRawPrimary = '';
+  int _lastSessionId = -1;
+  int _committedTailOffset = 0;
+
   bool get preferOnDevice => preferOnDeviceNotifier.value;
   bool get isListening => _platformService.isListening;
 
@@ -59,20 +64,49 @@ class SpeechService {
     void Function(OrphanVoiceData data, int session)? onOrphanData,
   }) async {
     await _ensurePrefLoaded();
+    _lastRawPrimary = '';
+    _lastSessionId = -1;
+    _committedTailOffset = 0;
     await _platformService.startListening(
       preferOnDevice: preferOnDeviceNotifier.value,
       onFallbackToCloud: () => setPreferOnDevice(false),
       onResult: (candidates, isFinal) {
+        if (candidates.isEmpty) return;
+        final currentSession = _platformService.session;
+        final primaryRaw = candidates.first;
+
+        // Reset incremental window when recognizer starts a fresh session/utterance
+        if (currentSession != _lastSessionId || primaryRaw.length < _lastRawPrimary.length) {
+          _lastSessionId = currentSession;
+          _lastRawPrimary = '';
+          _committedTailOffset = 0;
+        }
+
+        // Early duplicate-partial filter BEFORE running ArabicVoiceNormalizer
+        if (!isFinal && primaryRaw == _lastRawPrimary) return;
+        _lastRawPrimary = isFinal ? '' : primaryRaw;
+
         final sw = kDebugMode ? (Stopwatch()..start()) : null;
-        // High-performance single-pass pipeline with N-best alternate recovery:
-        // Scores Google STT alternate hypotheses in <0.2ms so dropped letters
-        // in noise or fast speech are recovered automatically on-device.
-        final best = ArabicVoiceNormalizer.selectBestCandidate(candidates);
+        final best = ArabicVoiceNormalizer.selectBestCandidateIncremental(
+          candidates,
+          startOffset: _committedTailOffset,
+        );
         final slots = ArabicVoiceNormalizer.extractLiveSlots(best.normalized, best.plates);
+
+        // Slide committed pointer forward once a completed plate accumulates >220 chars
+        if (primaryRaw.length - _committedTailOffset > 220 &&
+            best.plates.isNotEmpty &&
+            best.plates.last.isComplete) {
+          _committedTailOffset = ArabicVoiceNormalizer.nextWordBoundary(
+            primaryRaw,
+            primaryRaw.length - 100,
+          );
+        }
+
         if (sw != null) {
           sw.stop();
           VoiceTelemetryLogger.instance.logPartialNormalized(
-            session: _platformService.session,
+            session: currentSession,
             candidates: candidates,
             confidences: const [],
             isFinal: isFinal,
@@ -85,18 +119,22 @@ class SpeechService {
         if (best.plates.isEmpty) {
           final orphan = ArabicVoiceNormalizer.extractOrphanBrandAndNote(best.normalized);
           if (orphan.hasData) {
-            onOrphanData?.call(orphan, _platformService.session);
+            onOrphanData?.call(orphan, currentSession);
             if (onOrphanNote != null && orphan.note != null) {
-              onOrphanNote(orphan.note, _platformService.session);
+              onOrphanNote(orphan.note, currentSession);
             }
           }
         }
 
-        onResult(best.rawTranscript, best.plates, slots, best.normalized, isFinal);
+        onResult(primaryRaw, best.plates, slots, best.normalized, isFinal);
       },
       onDone: onDone,
     );
   }
 
-  Future<void> stopListening() => _platformService.stopListening();
+  Future<void> stopListening() {
+    _lastRawPrimary = '';
+    _committedTailOffset = 0;
+    return _platformService.stopListening();
+  }
 }

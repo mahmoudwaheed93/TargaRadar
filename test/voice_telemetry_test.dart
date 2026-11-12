@@ -45,6 +45,26 @@ void main() {
       expect(res.plates.length, equals(36));
       // Must stay well under 25ms in Dart VM even on 36 plates, and <8ms once incremental tail is used
       expect(sw.elapsedMilliseconds, lessThan(200));
+
+      // Incremental O(1) uncommitted-tail parsing (after Task D optimization):
+      // Tail slice from the active frontier of the same 60s transcript must run strictly < 8ms
+      final tailOffset = ArabicVoiceNormalizer.nextWordBoundary(
+        longTranscript,
+        longTranscript.length - 100,
+      );
+      final swInc = Stopwatch()..start();
+      final incRes = ArabicVoiceNormalizer.selectBestCandidateIncremental(
+        [longTranscript],
+        startOffset: tailOffset,
+      );
+      swInc.stop();
+
+      // ignore: avoid_print
+      print('[Task Benchmark] Incremental 60s tail partial -> ${incRes.plates.length} frontier plates '
+          'in ${(swInc.elapsedMicroseconds / 1000.0).toStringAsFixed(3)}ms');
+
+      expect(incRes.plates, isNotEmpty);
+      expect(swInc.elapsedMicroseconds, lessThan(8000));
     });
   });
 }

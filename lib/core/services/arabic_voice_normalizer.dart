@@ -1,3 +1,5 @@
+import 'dart:collection';
+import 'package:flutter/foundation.dart' show compute;
 export '../../data/models/excel_vehicle_model.dart' show OrphanVoiceData, ParsedPlateData;
 import '../../data/models/excel_vehicle_model.dart';
 
@@ -103,7 +105,7 @@ class ArabicVoiceNormalizer {
 
   static String _normWord(String w) => w
       .replaceAll('ة', 'ه')
-      .replaceAll(RegExp(r'[أإآ]'), 'ا')
+      .replaceAll(_reAlefs, 'ا')
       .replaceAll('ى', 'ي');
 
   static final Set<String> _fillerSet = fillerWords.map(_normWord).toSet();
@@ -279,43 +281,63 @@ class ArabicVoiceNormalizer {
     MapEntry(RegExp(_w('ياء|يه')), 'ي'),
   ];
 
-  static String? _memoIn;
-  static String _memoOut = '';
+  static final RegExp _reDiacritics = RegExp(r'[\u064B-\u065F\u0670\u0640]');
+  static final RegExp _reArabicDigits = RegExp(r'[٠-٩]');
+  static final RegExp _reAlefs = RegExp(r'[أإآ]');
+  static final RegExp _reWhitespace = RegExp(r'\s+');
+  static final RegExp _reNonArabicLetters = RegExp(r'[^ا-ي]');
+  static final RegExp _reNonDigits = RegExp(r'[^\d]');
+  static final RegExp _reDigitsClass = RegExp(r'\d');
+  static final RegExp _reTwoPlusDigits = RegExp(r'\d{2,}');
+  static final RegExp _reArabicWord = RegExp(r'^[ا-ي]+$');
+  static final RegExp _reArabicWordUpTo7 = RegExp(r'^[ا-ي]{1,7}$');
+  static final RegExp _reAlfBeforeNum = RegExp(
+      r'(?<![ء-ي])(?:و\s*)?الف(?=\s+(?:و\s*)?(?:صفر|زيرو|م[يئ][هة]|متين|ميتين|مئتين|مائ|تلات|تلت|ثلاث|اربع|خمس|ست|سبع|تمان|تمن|ثمان|تسع|عشر|احد|حداشر|اتناشر|تلتاشر|اربعتاشر|خمستاشر|ستاشر|سبعتاشر|تمانتاشر|تسعتاشر|واحد|اتنين|اثن|عشرون|تلاتون|ثلاثون|اربعون|خمسون|ستون|سبعون|تمانون|ثمانون|تسعون))(?![ء-ي])');
+  static final RegExp _reAlfTrailingPlate =
+      RegExp(r'(?<=^(?:\S+\s+){3})(?:و\s*)?الف(?![ء-ي])(?!\s*(?:[\u0621-\u064A]{1,2}\s+\d|\d))');
+  static final RegExp _reThouHundUnit = RegExp(r'\b([1-9]000)\s+([1-9]00)\s+(\d{1,2})\b');
+  static final RegExp _reThouHund = RegExp(r'\b([1-9]000)\s+([1-9]00)\b');
+  static final RegExp _reThouUnit = RegExp(r'\b([1-9]000)\s+(\d{1,2})\b');
+  static final RegExp _reHundUnit = RegExp(r'\b([1-9]00)\s+(\d{1,2})\b');
+
+  static const int _normCacheLimit = 128;
+  static final LinkedHashMap<String, String> _normCache = LinkedHashMap<String, String>();
 
   /// Normalize raw Arabic speech transcript into canonical letters and digits
+  /// backed by a bounded 128-entry LRU cache.
   static String normalizeArabicSpoken(String text) {
     if (text.isEmpty) return '';
-    if (text == _memoIn) return _memoOut;
+    final cached = _normCache.remove(text);
+    if (cached != null) {
+      _normCache[text] = cached;
+      return cached;
+    }
     final out = _normalizeUncached(text);
-    _memoIn = text;
-    _memoOut = out;
+    if (_normCache.length >= _normCacheLimit) {
+      _normCache.remove(_normCache.keys.first);
+    }
+    _normCache[text] = out;
     return out;
   }
 
   static String _normalizeUncached(String text) {
     const arabicDigits = '٠١٢٣٤٥٦٧٨٩';
     var cleaned = text
-        .replaceAll(RegExp(r'[\u064B-\u065F\u0670\u0640]'), '')
-        .replaceAllMapped(RegExp(r'[٠-٩]'), (match) {
+        .replaceAll(_reDiacritics, '')
+        .replaceAllMapped(_reArabicDigits, (match) {
       final digit = match.group(0)!;
       return '${arabicDigits.indexOf(digit)}';
     });
 
     cleaned = cleaned
-        .replaceAll(RegExp(r'[أإآ]'), 'ا')
+        .replaceAll(_reAlefs, 'ا')
         .replaceAll('ة', 'ه')
         .replaceAll('ى', 'ي');
 
     // Convert "الف" = 1000 when followed by ANY number word (hundreds, tens, teens, units, zero)
     // OR when immediately following 3 spoken letter tokens with no digits after it (e.g. "د ب ن الف").
-    cleaned = cleaned.replaceAllMapped(
-      RegExp(r'(?<![ء-ي])(?:و\s*)?الف(?=\s+(?:و\s*)?(?:صفر|زيرو|م[يئ][هة]|متين|ميتين|مئتين|مائ|تلات|تلت|ثلاث|اربع|خمس|ست|سبع|تمان|تمن|ثمان|تسع|عشر|احد|حداشر|اتناشر|تلتاشر|اربعتاشر|خمستاشر|ستاشر|سبعتاشر|تمانتاشر|تسعتاشر|واحد|اتنين|اثن|عشرون|تلاتون|ثلاثون|اربعون|خمسون|ستون|سبعون|تمانون|ثمانون|تسعون))(?![ء-ي])'),
-      (_) => ' 1000 ',
-    );
-    cleaned = cleaned.replaceAllMapped(
-      RegExp(r'(?<=^(?:\S+\s+){3})(?:و\s*)?الف(?![ء-ي])(?!\s*(?:[\u0621-\u064A]{1,2}\s+\d|\d))'),
-      (_) => ' 1000 ',
-    );
+    cleaned = cleaned.replaceAllMapped(_reAlfBeforeNum, (_) => ' 1000 ');
+    cleaned = cleaned.replaceAllMapped(_reAlfTrailingPlate, (_) => ' 1000 ');
 
     // Replace Spoken Letter Names
     for (final entry in arLetterNames) {
@@ -328,27 +350,27 @@ class ArabicVoiceNormalizer {
     }
 
     // Collapse compound place-value numbers ONLY (e.g. 2000 800 16 -> 2816, 1000 50 -> 1050)
-    cleaned = cleaned.replaceAllMapped(RegExp(r'\b([1-9]000)\s+([1-9]00)\s+(\d{1,2})\b'), (m) {
+    cleaned = cleaned.replaceAllMapped(_reThouHundUnit, (m) {
       final sum = (int.tryParse(m.group(1)!) ?? 0) +
           (int.tryParse(m.group(2)!) ?? 0) +
           (int.tryParse(m.group(3)!) ?? 0);
       return '$sum';
     });
-    cleaned = cleaned.replaceAllMapped(RegExp(r'\b([1-9]000)\s+([1-9]00)\b'), (m) {
+    cleaned = cleaned.replaceAllMapped(_reThouHund, (m) {
       final sum = (int.tryParse(m.group(1)!) ?? 0) + (int.tryParse(m.group(2)!) ?? 0);
       return '$sum';
     });
-    cleaned = cleaned.replaceAllMapped(RegExp(r'\b([1-9]000)\s+(\d{1,2})\b'), (m) {
+    cleaned = cleaned.replaceAllMapped(_reThouUnit, (m) {
       final sum = (int.tryParse(m.group(1)!) ?? 0) + (int.tryParse(m.group(2)!) ?? 0);
       return '$sum';
     });
-    cleaned = cleaned.replaceAllMapped(RegExp(r'\b([1-9]00)\s+(\d{1,2})\b'), (m) {
+    cleaned = cleaned.replaceAllMapped(_reHundUnit, (m) {
       final sum = (int.tryParse(m.group(1)!) ?? 0) + (int.tryParse(m.group(2)!) ?? 0);
       return '$sum';
     });
 
     // Collapse adjacent digit tokens up to 4 digits per plate in one O(N) pass
-    final rawTokens = cleaned.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+    final rawTokens = cleaned.split(_reWhitespace).where((t) => t.isNotEmpty).toList();
     final mergedTokens = <String>[];
     for (final tok in rawTokens) {
       if (mergedTokens.isNotEmpty &&
@@ -369,11 +391,11 @@ class ArabicVoiceNormalizer {
     if (plate.isEmpty) return '';
     const arabicDigits = '٠١٢٣٤٥٦٧٨٩';
     return plate
-        .replaceAllMapped(RegExp(r'[٠-٩]'), (m) => '${arabicDigits.indexOf(m.group(0)!)}')
-        .replaceAll(RegExp(r'[أإآ]'), 'ا')
+        .replaceAllMapped(_reArabicDigits, (m) => '${arabicDigits.indexOf(m.group(0)!)}')
+        .replaceAll(_reAlefs, 'ا')
         .replaceAll('ة', 'ه')
         .replaceAll('ى', 'ي')
-        .replaceAll(RegExp(r'\s+'), '')
+        .replaceAll(_reWhitespace, '')
         .trim();
   }
 
@@ -384,11 +406,10 @@ class ArabicVoiceNormalizer {
     if (plate.isEmpty) return '';
     final cached = _plateKeyCache[plate];
     if (cached != null) return cached;
-    final norm = normalizePlateForMatch(plate)
-        .replaceAll(RegExp(r'[\u064B-\u065F\u0670\u0640]'), '');
+    final norm = normalizePlateForMatch(plate).replaceAll(_reDiacritics, '');
     if (norm.isEmpty) return '';
-    final letters = norm.replaceAll(RegExp(r'[^ا-ي]'), '');
-    final digits = norm.replaceAll(RegExp(r'[^\d]'), '');
+    final letters = norm.replaceAll(_reNonArabicLetters, '');
+    final digits = norm.replaceAll(_reNonDigits, '');
     final out = '$letters$digits';
     if (_plateKeyCache.length >= 500) {
       _plateKeyCache.remove(_plateKeyCache.keys.first);
@@ -460,7 +481,7 @@ class ArabicVoiceNormalizer {
   static List<String>? _splitFusedToThreeLetters(String word) {
     if (word.length < 4 || word.length > 14) return null;
     if (_nonLetterTokens.contains(word)) return null;
-    if (!RegExp(r'^[ا-ي]+$').hasMatch(word)) return null;
+    if (!_reArabicWord.hasMatch(word)) return null;
 
     List<String>? bestLetters;
     int bestMultiCount = 0;
@@ -509,7 +530,7 @@ class ArabicVoiceNormalizer {
   ) {
     if (digitCandidates.isEmpty) return null;
     final spokenKey = plateKey(spokenPlate);
-    final spokenLetters = spokenKey.replaceAll(RegExp(r'[^ا-ي]'), '');
+    final spokenLetters = spokenKey.replaceAll(_reNonArabicLetters, '');
     if (spokenLetters.length != 3) return null;
 
     int? winnerIdx;
@@ -518,7 +539,7 @@ class ArabicVoiceNormalizer {
 
     for (final rowIdx in digitCandidates) {
       final candidateKey = plateKey(plateAt(rowIdx));
-      final candLetters = candidateKey.replaceAll(RegExp(r'[^ا-ي]'), '');
+      final candLetters = candidateKey.replaceAll(_reNonArabicLetters, '');
       if (candLetters.length != 3) continue;
 
       int score = 0;
@@ -554,7 +575,7 @@ class ArabicVoiceNormalizer {
     int permCount = 0;
     for (final rowIdx in digitCandidates) {
       final candidateKey = plateKey(plateAt(rowIdx));
-      final candLetters = candidateKey.replaceAll(RegExp(r'[^ا-ي]'), '');
+      final candLetters = candidateKey.replaceAll(_reNonArabicLetters, '');
       if (candLetters.length != 3) continue;
       final candSorted = (candLetters.split('')..sort()).join();
       if (candSorted == spokenSorted) {
@@ -614,7 +635,7 @@ class ArabicVoiceNormalizer {
     String Function(int rowIdx) plateAt,
   ) {
     if (unparsedTail.trim().isEmpty) return null;
-    final tokens = unparsedTail.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+    final tokens = unparsedTail.split(_reWhitespace).where((t) => t.isNotEmpty).toList();
     if (tokens.length < 2) return null;
 
     int digitIdx = -1;
@@ -638,14 +659,14 @@ class ArabicVoiceNormalizer {
     for (int k = digitIdx - 1; k >= 0 && nearbyWords.length < 2; k--) {
       final w = tokens[k];
       if (_isDigits(w) || _nonLetterTokens.contains(w)) continue;
-      if (RegExp(r'^[ا-ي]{1,7}$').hasMatch(w)) {
+      if (_reArabicWordUpTo7.hasMatch(w)) {
         nearbyWords.insert(0, w);
       }
     }
     for (int k = digitIdx + 1; k < tokens.length && nearbyWords.length < 2; k++) {
       final w = tokens[k];
       if (_isDigits(w) || _nonLetterTokens.contains(w)) continue;
-      if (RegExp(r'^[ا-ي]{1,7}$').hasMatch(w)) {
+      if (_reArabicWordUpTo7.hasMatch(w)) {
         nearbyWords.add(w);
       }
     }
@@ -659,7 +680,7 @@ class ArabicVoiceNormalizer {
     for (final rowIdx in candidates) {
       final rawSheetPlate = plateAt(rowIdx);
       final candKey = plateKey(rawSheetPlate);
-      final candLetters = candKey.replaceAll(RegExp(r'[^ا-ي]'), '');
+      final candLetters = candKey.replaceAll(_reNonArabicLetters, '');
       if (candLetters.length != 3) continue;
 
       final score = _orderedWordPlateMatchScore(word, candLetters);
@@ -676,8 +697,8 @@ class ArabicVoiceNormalizer {
     if (tied || winnerIdx == null) return null;
     final matchedRaw = plateAt(winnerIdx);
     final matchedKey = plateKey(matchedRaw);
-    final mLetters = matchedKey.replaceAll(RegExp(r'[^ا-ي]'), '').split('').join(' ');
-    final mDigits = matchedKey.replaceAll(RegExp(r'[^\d]'), '');
+    final mLetters = matchedKey.replaceAll(_reNonArabicLetters, '').split('').join(' ');
+    final mDigits = matchedKey.replaceAll(_reNonDigits, '');
     if (mLetters.isEmpty || mDigits.isEmpty) return null;
 
     return ParsedPlateData(
@@ -773,10 +794,10 @@ class ArabicVoiceNormalizer {
     final newNorm = normalizePlateForMatch(newPlate);
     if (prevNorm.isEmpty || newNorm.isEmpty) return false;
 
-    final prevLetters = prevNorm.replaceAll(RegExp(r'\d'), '');
-    final newLetters = newNorm.replaceAll(RegExp(r'\d'), '');
-    final prevDigits = prevNorm.replaceAll(RegExp(r'[^\d]'), '');
-    final newDigits = newNorm.replaceAll(RegExp(r'[^\d]'), '');
+    final prevLetters = prevNorm.replaceAll(_reDigitsClass, '');
+    final newLetters = newNorm.replaceAll(_reDigitsClass, '');
+    final prevDigits = prevNorm.replaceAll(_reNonDigits, '');
+    final newDigits = newNorm.replaceAll(_reNonDigits, '');
 
     if (prevLetters.length != 3 || newLetters.length != 3) return false;
     if (prevLetters != newLetters) return false;
@@ -1222,7 +1243,7 @@ class ArabicVoiceNormalizer {
   static Map<String, String> extractSlotsFromPlates(List<ParsedPlateData> plates) {
     if (plates.isEmpty) return const {};
     final p = plates.last;
-    final lClean = p.letters.replaceAll(RegExp(r'\s+'), '');
+    final lClean = p.letters.replaceAll(_reWhitespace, '');
     final lSlots = lClean.length > 3 ? lClean.substring(lClean.length - 3) : lClean;
     final lList = lSlots.split('');
     final dList = p.digits.split('');
@@ -1317,7 +1338,7 @@ class ArabicVoiceNormalizer {
     }
     if (latest.detectedBrand != '-') score += 5;
     if (latest.detectedNote != '-') score += 5;
-    if (!RegExp(r'\d{2,}').hasMatch(unparsedTail)) {
+    if (!_reTwoPlusDigits.hasMatch(unparsedTail)) {
       score += 15;
     }
     return score;
@@ -1346,7 +1367,7 @@ class ArabicVoiceNormalizer {
         primaryPlates.last.isComplete &&
         primaryPlates.last.letters.replaceAll(' ', '').length == 3 &&
         primaryPlates.last.digits.length == 4 &&
-        !RegExp(r'\d{2,}').hasMatch(primaryTail)) {
+        !_reTwoPlusDigits.hasMatch(primaryTail)) {
       return (rawTranscript: primaryRaw, normalized: primaryNorm, plates: primaryPlates);
     }
 
@@ -1369,6 +1390,62 @@ class ArabicVoiceNormalizer {
     }
 
     return (rawTranscript: bestRaw, normalized: bestNorm, plates: bestPlates);
+  }
+
+  /// Returns a word-aligned starting offset so incremental windowing never slices mid-token.
+  static int nextWordBoundary(String text, int rawOffset) {
+    if (rawOffset <= 0) return 0;
+    if (rawOffset >= text.length) return text.length;
+    var idx = rawOffset;
+    while (idx < text.length && text[idx] != ' ') {
+      idx++;
+    }
+    while (idx < text.length && text[idx] == ' ') {
+      idx++;
+    }
+    return idx >= text.length ? rawOffset : idx;
+  }
+
+  /// Evaluates N-best candidates incrementally from [startOffset] (constant O(1) cost
+  /// on multi-minute continuous speech streams).
+  static ({
+    String rawTranscript,
+    String normalized,
+    List<ParsedPlateData> plates,
+  }) selectBestCandidateIncremental(
+    List<String> candidates, {
+    int startOffset = 0,
+  }) {
+    if (candidates.isEmpty) {
+      return (rawTranscript: '', normalized: '', plates: const []);
+    }
+    if (startOffset <= 0) {
+      return selectBestCandidate(candidates);
+    }
+    final sliced = <String>[];
+    for (final c in candidates) {
+      if (startOffset < c.length) {
+        final cut = nextWordBoundary(c, startOffset);
+        sliced.add(c.substring(cut));
+      } else {
+        sliced.add(c);
+      }
+    }
+    final best = selectBestCandidate(sliced);
+    return (
+      rawTranscript: candidates.first,
+      normalized: best.normalized,
+      plates: best.plates,
+    );
+  }
+
+  static ({String rawTranscript, String normalized, List<ParsedPlateData> plates})
+      _selectBestInIsolate(List<String> candidates) => selectBestCandidate(candidates);
+
+  /// Background Isolate offloading fallback for heavy batch candidate matching.
+  static Future<({String rawTranscript, String normalized, List<ParsedPlateData> plates})>
+      selectBestCandidateInIsolate(List<String> candidates) {
+    return compute(_selectBestInIsolate, candidates);
   }
 }
 
@@ -1460,9 +1537,12 @@ class PlateUtteranceStitcher {
     return (normalized: effectiveNorm, plates: effectivePlates, slots: effectiveSlots);
   }
 
+  static final RegExp _reStitchWord = RegExp(r'^[ا-ي]{1,6}$');
+  static final RegExp _reStitchDigits = RegExp(r'^\d{3,4}$');
+
   static bool _isStitchableFragment(String normTail) {
     final tokens = normTail.split(' ').where((t) => t.isNotEmpty).toList();
     if (tokens.isEmpty || tokens.length > 4) return false;
-    return tokens.any((t) => RegExp(r'^[ا-ي]{1,6}$').hasMatch(t) || RegExp(r'^\d{3,4}$').hasMatch(t));
+    return tokens.any((t) => _reStitchWord.hasMatch(t) || _reStitchDigits.hasMatch(t));
   }
 }
