@@ -109,6 +109,7 @@ class ExcelSortAuditProvider extends ChangeNotifier {
 
   Future<void> setCurrentUserId(String uid) async {
     if (_currentUserId == uid) return;
+    _persistTimer?.cancel();
     _currentUserId = uid;
     await loadPersistedData();
   }
@@ -200,12 +201,20 @@ class ExcelSortAuditProvider extends ChangeNotifier {
 
   // plate key -> index in _sheetItems (O(1) matching even for 60k+ rows)
   final Map<String, int> _index = {};
+  final Map<String, List<int>> _byDigits = {};
 
   void _rebuildIndex() {
     _index.clear();
+    _byDigits.clear();
     for (int i = 0; i < _sheetItems.length; i++) {
       final k = ArabicVoiceNormalizer.plateKey(_sheetItems[i].rawPlate);
-      if (k.isNotEmpty) _index.putIfAbsent(k, () => i);
+      if (k.isNotEmpty) {
+        _index.putIfAbsent(k, () => i);
+        final d = k.replaceAll(RegExp(r'[^\d]'), '');
+        if (d.length >= 3) {
+          _byDigits.putIfAbsent(d, () => <int>[]).add(i);
+        }
+      }
     }
   }
 
@@ -304,11 +313,27 @@ class ExcelSortAuditProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Match a spoken or manually entered plate against the sheet (O(1))
+  /// Match a spoken or manually entered plate against the sheet (O(1) + phonetic digit-pivot rescue)
   AuditedLogItem processAuditPlate(String fullPlate, {String? detectedBrand, String? detectedNote}) {
-    final normPlate = ArabicVoiceNormalizer.plateKey(fullPlate);
+    var normPlate = ArabicVoiceNormalizer.plateKey(fullPlate);
+    var resolvedPlate = fullPlate;
 
-    final matchIndex = _index[normPlate] ?? -1;
+    var matchIndex = _index[normPlate] ?? -1;
+    if (matchIndex == -1) {
+      final digits = normPlate.replaceAll(RegExp(r'[^\d]'), '');
+      if (digits.length >= 3) {
+        final rescuedIdx = ArabicVoiceNormalizer.findPhoneticSheetMatchIndex(
+          fullPlate,
+          _byDigits[digits] ?? const [],
+          (idx) => _sheetItems[idx].rawPlate,
+        );
+        if (rescuedIdx != null) {
+          matchIndex = rescuedIdx;
+          resolvedPlate = _sheetItems[rescuedIdx].rawPlate;
+          normPlate = ArabicVoiceNormalizer.plateKey(resolvedPlate);
+        }
+      }
+    }
 
     final isMatched = matchIndex != -1;
     final now = DateTime.now();
@@ -326,7 +351,7 @@ class ExcelSortAuditProvider extends ChangeNotifier {
     final logItem = AuditedLogItem(
       id: 'log-${now.microsecondsSinceEpoch}-${_logSeq++}',
       seqNumber: _liveAuditFeed.length + 1,
-      plateNumber: fullPlate,
+      plateNumber: resolvedPlate,
       normalizedPlate: normPlate,
       isMatched: isMatched,
       carType: isMatched

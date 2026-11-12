@@ -297,5 +297,53 @@ void main() {
         equals(''),
       );
     });
+
+    test('Fused ultra-fast speech words (رانونيا، رانو نيا، سينصادعين) decode to 3 letters at 0ms', () {
+      final f1 = ArabicVoiceNormalizer.extractPlatesFromTranscript('رانونيا 2816');
+      expect(f1.length, equals(1));
+      expect(f1.first.fullPlate, equals('ر ن ي 2816'));
+      expect(f1.first.isComplete, isTrue);
+
+      final f2 = ArabicVoiceNormalizer.extractPlatesFromTranscript('2816 رانونيا');
+      expect(f2.length, equals(1));
+      expect(f2.first.fullPlate, equals('ر ن ي 2816'));
+
+      final f3 = ArabicVoiceNormalizer.extractPlatesFromTranscript('رانو نيا 2816');
+      expect(f3.length, equals(1));
+      expect(f3.first.fullPlate, equals('ر ن ي 2816'));
+
+      final f4 = ArabicVoiceNormalizer.extractPlatesFromTranscript('سينصادعين 3253');
+      expect(f4.length, equals(1));
+      expect(f4.first.fullPlate, equals('س ص ع 3253'));
+
+      // Known brands must never split into fake letters
+      expect(ArabicVoiceNormalizer.extractPlatesFromTranscript('تويوتا 2816'), isEmpty);
+    });
+
+    test('Digit-Pivot Phonetic Rescue fixes 1 lisped/slurred letter using unique sheet candidate', () {
+      final sheetPlates = ['د ب ن 2816', 'س ص ع 9999'];
+      final rescued = ArabicVoiceNormalizer.findPhoneticSheetMatchIndex(
+        'ذ ب ن 2816',
+        const [0],
+        (i) => sheetPlates[i],
+      );
+      expect(rescued, equals(0));
+
+      // Ambiguous tie across two candidates must not guess
+      final tiedSheet = ['د ب ن 2816', 'ز ب ن 2816'];
+      final tied = ArabicVoiceNormalizer.findPhoneticSheetMatchIndex(
+        'ذ ب ن 2816',
+        const [0, 1],
+        (i) => tiedSheet[i],
+      );
+      expect(tied, isNull);
+    });
+
+    test('isPlateUpgrade supports both digit growth and zero-padded 3-digit upgrade', () {
+      expect(ArabicVoiceNormalizer.isPlateUpgrade('د ب ق 281', 'د ب ق 2816'), isTrue);
+      expect(ArabicVoiceNormalizer.isPlateUpgrade('د ب ق 2810', 'د ب ق 2816'), isTrue);
+      expect(ArabicVoiceNormalizer.isPlateUpgrade('د ب ق 2810', 'د ب ق 9999'), isFalse);
+      expect(ArabicVoiceNormalizer.isPlateUpgrade('د ب ق 2810', 'د ب ق 2810'), isFalse);
+    });
   });
 }

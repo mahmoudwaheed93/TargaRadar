@@ -23,6 +23,7 @@ class _TwoFileMatchScreenState extends State<TwoFileMatchScreen> {
 
   TwoFileMatchResult? _result;
   bool _busy = false;
+  bool _detailsOpen = false;
   String? _error;
   String? _exportedPath;
 
@@ -33,10 +34,6 @@ class _TwoFileMatchScreenState extends State<TwoFileMatchScreen> {
         v.contains('maps.google.com') ||
         v.contains('google.com/maps') ||
         v.contains('maps.app.goo.gl');
-  }
-
-  Future<void> _openMapUrl(String url) async {
-    await ExternalActions.openUrl(url);
   }
 
   @override
@@ -153,9 +150,11 @@ class _TwoFileMatchScreenState extends State<TwoFileMatchScreen> {
     }
   }
 
-  void _showPlateDetailsModal(List<String> row, List<String> headers, int plateCol) {
+  Future<void> _showPlateDetailsModal(List<String> row, List<String> headers, int plateCol) async {
+    if (_detailsOpen) return;
+    _detailsOpen = true;
     final plateStr = plateCol < row.length ? row[plateCol] : '';
-    showModalBottomSheet<void>(
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: AppColors.cardDark,
@@ -284,6 +283,7 @@ class _TwoFileMatchScreenState extends State<TwoFileMatchScreen> {
         );
       },
     );
+    _detailsOpen = false;
   }
 
   @override

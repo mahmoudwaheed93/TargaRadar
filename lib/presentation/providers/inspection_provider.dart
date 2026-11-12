@@ -55,6 +55,7 @@ class InspectionProvider extends ChangeNotifier {
   String _currentUserId = '';
   ExcelTable? _table;
   final Map<String, int> _index = {};
+  final Map<String, List<int>> _byDigits = {};
   String _refFileName = '';
   bool _loadingFile = false;
   String? _error;
@@ -112,6 +113,7 @@ class InspectionProvider extends ChangeNotifier {
     if (_isListening) await stopListening();
     _table = null;
     _index.clear();
+    _byDigits.clear();
     _refFileName = '';
     _error = null;
     _entries.clear();
@@ -165,9 +167,16 @@ class InspectionProvider extends ChangeNotifier {
       _table = table;
       _refFileName = picked.name;
       _index.clear();
+      _byDigits.clear();
       for (int i = 0; i < table.rows.length; i++) {
         final k = ArabicVoiceNormalizer.plateKey(table.rows[i][table.plateCol]);
-        if (k.isNotEmpty) _index.putIfAbsent(k, () => i);
+        if (k.isNotEmpty) {
+          _index.putIfAbsent(k, () => i);
+          final d = k.replaceAll(RegExp(r'[^\d]'), '');
+          if (d.length >= 3) {
+            _byDigits.putIfAbsent(d, () => <int>[]).add(i);
+          }
+        }
       }
       for (int i = 0; i < _entries.length; i++) {
         final e = _entries[i];
@@ -211,8 +220,25 @@ class InspectionProvider extends ChangeNotifier {
   }
 
   void _ingestInspectionPlate(ParsedPlateData p, void Function(InspectionEntry entry) onMatch) {
-    final key = ArabicVoiceNormalizer.plateKey(p.fullPlate);
+    var key = ArabicVoiceNormalizer.plateKey(p.fullPlate);
+    var resolvedPlate = p.fullPlate;
     if (key.isEmpty) return;
+
+    // Digit-pivot phonetic rescue against the reference sheet
+    if (_table != null && _index[key] == null) {
+      final digits = key.replaceAll(RegExp(r'[^\d]'), '');
+      if (digits.length >= 3) {
+        final rescuedIdx = ArabicVoiceNormalizer.findPhoneticSheetMatchIndex(
+          p.fullPlate,
+          _byDigits[digits] ?? const [],
+          (idx) => _table!.rows[idx][_table!.plateCol],
+        );
+        if (rescuedIdx != null) {
+          resolvedPlate = _table!.rows[rescuedIdx][_table!.plateCol];
+          key = ArabicVoiceNormalizer.plateKey(resolvedPlate);
+        }
+      }
+    }
 
     if (_seen.contains(key)) {
       _lastKey = key;
@@ -224,7 +250,7 @@ class InspectionProvider extends ChangeNotifier {
         _lastIngestedAt != null &&
         DateTime.now().difference(_lastIngestedAt!).inSeconds <= 5) {
       final prev = _entries.first;
-      if (ArabicVoiceNormalizer.isPlateUpgrade(prev.plate, p.fullPlate)) {
+      if (ArabicVoiceNormalizer.isPlateUpgrade(prev.plate, resolvedPlate)) {
         _seen.remove(prev.key);
         _seen.add(key);
         _lastKey = key;
@@ -232,7 +258,7 @@ class InspectionProvider extends ChangeNotifier {
         final row = _rowFor(key);
         final updated = InspectionEntry(
           id: prev.id,
-          plate: p.fullPlate,
+          plate: resolvedPlate,
           key: key,
           time: prev.time,
           inSheet: row != null,
@@ -256,7 +282,7 @@ class InspectionProvider extends ChangeNotifier {
     final now = DateTime.now();
     final entry = InspectionEntry(
       id: 'insp-${now.microsecondsSinceEpoch}-$key',
-      plate: p.fullPlate,
+      plate: resolvedPlate,
       key: key,
       time: AppDateFormatter.time12(now),
       inSheet: row != null,
@@ -541,6 +567,8 @@ class InspectionProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _isListening = false;
+    _pendingIncompletePlate = null;
     _ticker?.cancel();
     _incompletePlateTimer?.cancel();
     _aiTimer?.cancel();

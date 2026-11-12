@@ -395,6 +395,153 @@ class ArabicVoiceNormalizer {
   static final RegExp _digitsOnly = RegExp(r'^\d+$');
   static final RegExp _gluedLetters = RegExp(r'^[ا-ي]{2,4}$');
 
+  /// Fused spoken letter-name syllables used by DP splitter when fast dictation merges
+  /// 3 letter names into one token (e.g. "رانونيا" -> "را" + "نون" + "يا" -> "ر ن ي").
+  static const Map<String, String> _letterSyllables = {
+    'الف': 'ا', 'اء': 'ا',
+    'باء': 'ب', 'با': 'ب', 'به': 'ب',
+    'تاء': 'ت', 'تا': 'ت', 'ته': 'ت',
+    'ثاء': 'ث', 'ثا': 'ث', 'ثه': 'ث',
+    'جيم': 'ج', 'جي': 'ج',
+    'حاء': 'ح', 'حا': 'ح', 'حه': 'ح',
+    'خاء': 'خ', 'خا': 'خ', 'خه': 'خ',
+    'دال': 'د', 'دا': 'د',
+    'ذال': 'ذ', 'ذا': 'ذ', 'ذه': 'ذ',
+    'راء': 'ر', 'را': 'ر',
+    'زاي': 'ز', 'زا': 'ز', 'زه': 'ز',
+    'سين': 'س', 'سا': 'س',
+    'شين': 'ش', 'شا': 'ش', 'شي': 'ش',
+    'صاد': 'ص', 'صا': 'ص',
+    'ضاد': 'ض', 'ضا': 'ض',
+    'طاء': 'ط', 'طا': 'ط', 'طه': 'ط',
+    'ظاء': 'ظ', 'ظا': 'ظ', 'ظه': 'ظ',
+    'عين': 'ع', 'عا': 'ع', 'عه': 'ع',
+    'غين': 'غ', 'غا': 'غ', 'غه': 'غ',
+    'فاء': 'ف', 'فا': 'ف', 'فه': 'ف',
+    'قاف': 'ق', 'قا': 'ق', 'قه': 'ق',
+    'كاف': 'ك', 'كا': 'ك', 'كه': 'ك',
+    'لام': 'ل', 'لا': 'ل',
+    'ميم': 'م', 'ما': 'م', 'مه': 'م',
+    'نون': 'ن', 'نو': 'ن',
+    'هاء': 'ه', 'ها': 'ه',
+    'واو': 'و', 'وا': 'و',
+    'ياء': 'ي', 'يا': 'ي', 'يه': 'ي',
+  };
+
+  /// Phonetic confusion equivalence groups for rescuing fast/lisped Arabic letters
+  /// against a known Excel reference sheet using identical digits.
+  static const List<Set<String>> _phoneticGroups = [
+    {'س', 'ص', 'ث', 'ش'},
+    {'د', 'ذ', 'ض', 'ظ', 'ز'},
+    {'ت', 'ط'},
+    {'ق', 'ك', 'ج', 'ا'},
+    {'ر', 'ل', 'غ'},
+    {'ح', 'ه', 'ع', 'خ'},
+    {'م', 'ن'},
+    {'ب', 'ف'},
+  ];
+
+  static bool _arePhoneticallyClose(String a, String b) {
+    if (a == b) return true;
+    for (final grp in _phoneticGroups) {
+      if (grp.contains(a) && grp.contains(b)) return true;
+    }
+    return false;
+  }
+
+  /// Splits a fused spoken letter-name word (like "رانونيا") into 3 isolated
+  /// Arabic letters if >= 2 syllables are multi-character spoken letter names.
+  static List<String>? _splitFusedToThreeLetters(String word) {
+    if (word.length < 4 || word.length > 14) return null;
+    if (_nonLetterTokens.contains(word)) return null;
+    if (!RegExp(r'^[ا-ي]+$').hasMatch(word)) return null;
+
+    List<String>? bestLetters;
+    int bestMultiCount = -1;
+
+    void dfs(int pos, List<String> acc, int multiCount) {
+      if (acc.length > 3) return;
+      if (pos == word.length) {
+        if (acc.length == 3 && multiCount >= 2 && multiCount > bestMultiCount) {
+          bestMultiCount = multiCount;
+          bestLetters = List<String>.from(acc);
+        }
+        return;
+      }
+      if (acc.length == 3) return;
+
+      // Try longer explicit letter-name syllables first (4 -> 2 chars), then single letter
+      final maxLen = (word.length - pos).clamp(1, 4);
+      for (int len = maxLen; len >= 1; len--) {
+        final sub = word.substring(pos, pos + len);
+        if (len >= 2) {
+          final mapped = _letterSyllables[sub];
+          if (mapped != null) {
+            acc.add(mapped);
+            dfs(pos + len, acc, multiCount + 1);
+            acc.removeLast();
+          }
+        } else if (_isLetter(sub)) {
+          acc.add(sub);
+          dfs(pos + 1, acc, multiCount);
+          acc.removeLast();
+        }
+      }
+    }
+
+    dfs(0, [], 0);
+    return bestLetters;
+  }
+
+  /// Resolves a fast/lisped 3-letter spoken plate against same-digit Excel candidates.
+  /// Returns the corrected sheet plate ONLY when 2 letters match identically and
+  /// the 3rd letter sits in the same phonetic confusion group with a unique winner.
+  static int? findPhoneticSheetMatchIndex(
+    String spokenPlate,
+    List<int> digitCandidates,
+    String Function(int rowIdx) plateAt,
+  ) {
+    if (digitCandidates.isEmpty) return null;
+    final spokenKey = plateKey(spokenPlate);
+    final spokenLetters = spokenKey.replaceAll(RegExp(r'[^ا-ي]'), '');
+    if (spokenLetters.length != 3) return null;
+
+    int? winnerIdx;
+    int bestScore = 0;
+    bool tied = false;
+
+    for (final rowIdx in digitCandidates) {
+      final candidateKey = plateKey(plateAt(rowIdx));
+      final candLetters = candidateKey.replaceAll(RegExp(r'[^ا-ي]'), '');
+      if (candLetters.length != 3) continue;
+
+      int score = 0;
+      bool incompatible = false;
+      for (int p = 0; p < 3; p++) {
+        final sCh = spokenLetters[p];
+        final cCh = candLetters[p];
+        if (sCh == cCh) {
+          score += 2;
+        } else if (_arePhoneticallyClose(sCh, cCh)) {
+          score += 1;
+        } else {
+          incompatible = true;
+          break;
+        }
+      }
+      if (incompatible || score < 5) continue; // require >= 2 exact + 1 phonetic close
+      if (score > bestScore) {
+        bestScore = score;
+        winnerIdx = rowIdx;
+        tied = false;
+      } else if (score == bestScore && winnerIdx != null) {
+        tied = true;
+      }
+    }
+
+    return tied ? null : winnerIdx;
+  }
+
   static bool _isLetter(String t) => _singleLetter.hasMatch(t);
   static bool _isDigits(String t) => _digitsOnly.hasMatch(t);
   // Strictly 3-4 digit numbers (3 digits will finalize by padding a trailing '0')
@@ -471,11 +618,12 @@ class ArabicVoiceNormalizer {
   }
 
   /// Returns true when [newPlate] is an incremental continuation of [prevPlate]
-  /// (strictly same 3 letters with trailing digit extension, e.g. `ب ن ق 281` -> `ب ن ق 2816`).
+  /// (strictly same 3 letters with trailing digit extension, e.g. `ب ن ق 281` -> `ب ن ق 2816`,
+  /// OR upgrading a zero-padded 3-digit completion `ب ن ق 2810` -> `ب ن ق 2816`).
   static bool isPlateUpgrade(String prevPlate, String newPlate) {
     final prevNorm = normalizePlateForMatch(prevPlate);
     final newNorm = normalizePlateForMatch(newPlate);
-    if (prevNorm.isEmpty || newNorm.length <= prevNorm.length) return false;
+    if (prevNorm.isEmpty || newNorm.isEmpty) return false;
 
     final prevLetters = prevNorm.replaceAll(RegExp(r'\d'), '');
     final newLetters = newNorm.replaceAll(RegExp(r'\d'), '');
@@ -484,9 +632,24 @@ class ArabicVoiceNormalizer {
 
     if (prevLetters.length != 3 || newLetters.length != 3) return false;
     if (prevLetters != newLetters) return false;
-    return prevDigits.isNotEmpty &&
-        newDigits.length > prevDigits.length &&
-        newDigits.startsWith(prevDigits);
+    if (prevDigits.isEmpty) return false;
+
+    // Case 1: direct digit growth (e.g. "281" -> "2816")
+    if (newDigits.length > prevDigits.length &&
+        newDigits.startsWith(prevDigits)) {
+      return true;
+    }
+
+    // Case 2: 3-digit zero-padded plate ("2810") upgraded by 4th digit ("2816")
+    if (prevDigits.length == 4 &&
+        prevDigits.endsWith('0') &&
+        newDigits.length == 4 &&
+        newDigits != prevDigits &&
+        newDigits.startsWith(prevDigits.substring(0, 3))) {
+      return true;
+    }
+
+    return false;
   }
 
   /// Extract Brand from a list of words
@@ -618,10 +781,38 @@ class ArabicVoiceNormalizer {
         i = colA.nextIdx + 1;
         continue;
       }
-      // Explicitly skip invalid 4-letter contiguous blocks so they cannot be sliced into 3
+      // Skip invalid 4-letter contiguous blocks so they cannot be sliced into 3
       if (colA.letters.length > 3) {
         i = colA.nextIdx;
         continue;
+      }
+
+      // Fused letter-name fallback (e.g. "رانونيا 2816" or "رانو نيا 2816" -> "ر ن ي 2816")
+      if (_phraseLengthAt(tokens, i) == 0 && !_isDigits(tokens[i])) {
+        bool matchedFused = false;
+        for (int span = 1; span <= 2 && i + span < tokens.length; span++) {
+          if (span == 2 && (_phraseLengthAt(tokens, i + 1) > 0 || _isDigits(tokens[i + 1]))) break;
+          if (_isPlateDigits(tokens[i + span])) {
+            final joined = tokens.sublist(i, i + span).join('');
+            final fused = _splitFusedToThreeLetters(joined);
+            if (fused != null) {
+              final letters = fused.join(' ');
+              final digits = tokens[i + span];
+              matches.add(_PlateMatch(
+                startIndex: i,
+                endIndex: i + span + 1,
+                letters: letters,
+                digits: digits,
+                fullPlate: '$letters $digits',
+                isDigitsFirst: false,
+              ));
+              i = i + span + 1;
+              matchedFused = true;
+              break;
+            }
+          }
+        }
+        if (matchedFused) continue;
       }
 
       // Pattern C/D: Digits (3 or 4) then Letters (strictly 3)
@@ -694,6 +885,32 @@ class ArabicVoiceNormalizer {
         if (colC.letters.length > 3) {
           i = colC.nextIdx;
           continue;
+        }
+
+        // Digits-first fused letter-name fallback (e.g. "2816 رانونيا" -> "ر ن ي 2816")
+        if (i + 1 < tokens.length && _phraseLengthAt(tokens, i + 1) == 0 && !_isDigits(tokens[i + 1])) {
+          bool matchedFusedAfter = false;
+          for (int span = 1; span <= 2 && i + span < tokens.length; span++) {
+            if (span == 2 && (_phraseLengthAt(tokens, i + 2) > 0 || _isDigits(tokens[i + 2]))) break;
+            final joined = tokens.sublist(i + 1, i + 1 + span).join('');
+            final fused = _splitFusedToThreeLetters(joined);
+            if (fused != null) {
+              final letters = fused.join(' ');
+              final digits = tokens[i];
+              matches.add(_PlateMatch(
+                startIndex: i,
+                endIndex: i + 1 + span,
+                letters: letters,
+                digits: digits,
+                fullPlate: '$letters $digits',
+                isDigitsFirst: true,
+              ));
+              i = i + 1 + span;
+              matchedFusedAfter = true;
+              break;
+            }
+          }
+          if (matchedFusedAfter) continue;
         }
       }
 

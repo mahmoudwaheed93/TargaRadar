@@ -127,6 +127,9 @@ class CarRecordProvider extends ChangeNotifier {
   String _currentUserId = '';
 
   Future<void> setCurrentUserId(String uid) async {
+    _incompletePlateTimer?.cancel();
+    _pendingIncompletePlate = null;
+    _aiTimer?.cancel();
     _currentUserId = uid;
     _dbHelper.currentUserId = uid;
     _recordedPlates.clear();
@@ -422,19 +425,27 @@ class CarRecordProvider extends ChangeNotifier {
       final prevNorm = ArabicVoiceNormalizer.plateKey(prev.plateNumber);
       if (DateTime.now().difference(prev.registrationDate).inSeconds <= 5 &&
           ArabicVoiceNormalizer.isPlateUpgrade(prev.plateNumber, plateData.fullPlate)) {
-        _recordedPlates.remove(prevNorm);
-        _recordByKey.remove(prevNorm);
-        _pendingUpdates.remove(prevNorm);
-        _recordedPlates.add(norm);
-        _lastKey = norm;
-        _latestNote[norm] = spokenNote ?? prev.notes;
-
         final auditLog = sortAuditProvider.processAuditPlate(
           plateData.fullPlate,
           detectedBrand: plateData.detectedBrand,
           detectedNote: spokenNote ?? _stickyNote,
         );
-        _lastReadPlate = plateData.fullPlate;
+        final candidatePlate = auditLog.isMatched ? auditLog.plateNumber : plateData.fullPlate;
+        final candidateNorm = auditLog.isMatched && auditLog.normalizedPlate.isNotEmpty
+            ? auditLog.normalizedPlate
+            : norm;
+        final useCandidate = candidateNorm == prevNorm || !_recordedPlates.contains(candidateNorm);
+        final effectivePlate = useCandidate ? candidatePlate : plateData.fullPlate;
+        final effectiveNorm = useCandidate ? candidateNorm : norm;
+
+        _recordedPlates.remove(prevNorm);
+        _recordByKey.remove(prevNorm);
+        _pendingUpdates.remove(prevNorm);
+        _recordedPlates.add(effectiveNorm);
+        _lastKey = effectiveNorm;
+        _latestNote[effectiveNorm] = spokenNote ?? prev.notes;
+
+        _lastReadPlate = effectivePlate;
         _lastReadIsWanted = auditLog.isMatched;
         _lastMatchResult = auditLog;
         _applySlotsFromPlate(plateData);
@@ -442,7 +453,7 @@ class CarRecordProvider extends ChangeNotifier {
         final existingId = prev.id ?? _recordIds.remove(prevNorm);
         final updated = CarRecord(
           id: existingId,
-          plateNumber: plateData.fullPlate,
+          plateNumber: effectivePlate,
           carType: plateData.detectedBrand != '-' ? plateData.detectedBrand : (auditLog.carType.isNotEmpty && auditLog.carType != '-' ? auditLog.carType : prev.carType),
           gpsUrl: prev.gpsUrl,
           district: prev.district,
@@ -455,33 +466,29 @@ class CarRecordProvider extends ChangeNotifier {
           owner: auditLog.owner,
         );
         _records[0] = updated;
-        _recordByKey[norm] = updated;
+        _recordByKey[effectiveNorm] = updated;
         _recordsVersion++;
         _recentRecords = _records.take(10).toList();
         notifyListeners();
 
         if (existingId != null) {
-          _recordIds[norm] = existingId;
+          _recordIds[effectiveNorm] = existingId;
           unawaited(_dbHelper.updateCarRecord(updated));
         } else {
           for (final entry in _upgradedKeyRedirects.entries.toList()) {
             if (entry.value == prevNorm) {
-              _upgradedKeyRedirects[entry.key] = norm;
+              _upgradedKeyRedirects[entry.key] = effectiveNorm;
             }
           }
-          _upgradedKeyRedirects[prevNorm] = norm;
-          _pendingUpdates[norm] = updated;
+          _upgradedKeyRedirects[prevNorm] = effectiveNorm;
+          _pendingUpdates[effectiveNorm] = updated;
         }
         if (auditLog.isMatched && !prev.isMatched) {
-          onPlateAdded(plateData.fullPlate, auditLog.isMatched, auditLog.carType);
+          onPlateAdded(effectivePlate, auditLog.isMatched, auditLog.carType);
         }
         return;
       }
     }
-
-    _recordedPlates.add(norm);
-    _lastKey = norm;
-    _latestNote[norm] = spokenNote ?? _stickyNote ?? '-';
 
     final auditLog = sortAuditProvider.processAuditPlate(
       plateData.fullPlate,
@@ -489,7 +496,26 @@ class CarRecordProvider extends ChangeNotifier {
       detectedNote: spokenNote ?? _stickyNote,
     );
 
-    _lastReadPlate = plateData.fullPlate;
+    // If phonetic digit-pivot matched a canonical sheet plate, snap cleanly to it
+    final effectivePlate = auditLog.isMatched ? auditLog.plateNumber : plateData.fullPlate;
+    final effectiveNorm = auditLog.isMatched && auditLog.normalizedPlate.isNotEmpty
+        ? auditLog.normalizedPlate
+        : norm;
+    if (effectiveNorm != norm && _recordedPlates.contains(effectiveNorm)) {
+      _lastKey = effectiveNorm;
+      _lastReadPlate = effectivePlate;
+      _lastReadIsWanted = true;
+      _lastMatchResult = auditLog;
+      _recordsVersion++;
+      notifyListeners();
+      return;
+    }
+
+    _recordedPlates.add(effectiveNorm);
+    _lastKey = effectiveNorm;
+    _latestNote[effectiveNorm] = spokenNote ?? _stickyNote ?? '-';
+
+    _lastReadPlate = effectivePlate;
     _lastReadIsWanted = auditLog.isMatched;
     _lastMatchResult = auditLog;
 
@@ -497,7 +523,7 @@ class CarRecordProvider extends ChangeNotifier {
 
     final location = _lastKnownLocation;
     final record = CarRecord(
-      plateNumber: plateData.fullPlate,
+      plateNumber: effectivePlate,
       carType: plateData.detectedBrand != '-' ? plateData.detectedBrand : (auditLog.carType.isNotEmpty && auditLog.carType != '-' ? auditLog.carType : 'غير محدد'),
       gpsUrl: location?.gpsUrl ?? '-',
       district: _currentDistrict.trim().isNotEmpty ? _currentDistrict.trim() : (location?.district ?? 'غير متاح'),
@@ -511,7 +537,7 @@ class CarRecordProvider extends ChangeNotifier {
     );
 
     _records.insert(0, record);
-    _recordByKey[norm] = record;
+    _recordByKey[effectiveNorm] = record;
     _recordsVersion++;
     _recentRecords = _records.take(10).toList();
     notifyListeners();
@@ -520,7 +546,7 @@ class CarRecordProvider extends ChangeNotifier {
     unawaited(() async {
       try {
         final newId = await _dbHelper.insertCarRecord(record);
-        final finalNorm = _upgradedKeyRedirects.remove(norm) ?? norm;
+        final finalNorm = _upgradedKeyRedirects.remove(effectiveNorm) ?? effectiveNorm;
         _upgradedKeyRedirects.removeWhere((_, v) => v == finalNorm);
         // If the user already deleted the card while SQLite insert was in flight, delete the orphaned DB row
         if (!_recordedPlates.contains(finalNorm)) {
@@ -538,7 +564,7 @@ class CarRecordProvider extends ChangeNotifier {
           _recentRecords = _records.take(10).toList();
           notifyListeners();
         }
-        final pending = _pendingUpdates.remove(finalNorm) ?? _pendingUpdates.remove(norm);
+        final pending = _pendingUpdates.remove(finalNorm) ?? _pendingUpdates.remove(effectiveNorm);
         if (pending != null) {
           await _dbHelper.updateCarRecord(pending.copyWith(id: newId));
         } else {
@@ -552,7 +578,7 @@ class CarRecordProvider extends ChangeNotifier {
       }
     }());
 
-    onPlateAdded(plateData.fullPlate, auditLog.isMatched, auditLog.carType);
+    onPlateAdded(effectivePlate, auditLog.isMatched, auditLog.carType);
   }
 
   Timer? _incompletePlateTimer;
@@ -839,6 +865,8 @@ class CarRecordProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _isListening = false;
+    _pendingIncompletePlate = null;
     _timer?.cancel();
     _incompletePlateTimer?.cancel();
     _aiTimer?.cancel();
