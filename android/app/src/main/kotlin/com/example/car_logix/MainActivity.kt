@@ -59,7 +59,11 @@ class MainActivity : FlutterActivity() {
             // Guard OEM AudioManager quirks safely.
         }
     }
-
+    override fun onPause() {
+        setBeepSuppressed(false)
+        super.onPause()
+    }
+    
     override fun onDestroy() {
         setBeepSuppressed(false)
         super.onDestroy()
