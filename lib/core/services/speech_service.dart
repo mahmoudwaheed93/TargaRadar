@@ -16,7 +16,7 @@ class SpeechService {
       ? WebSpeechPlatformService()
       : MobileSpeechPlatformService();
 
-  final ValueNotifier<bool> preferOnDeviceNotifier = ValueNotifier<bool>(true);
+  final ValueNotifier<bool> preferOnDeviceNotifier = ValueNotifier<bool>(false);
   bool _prefLoaded = false;
 
   // Incremental O(1) parsing & early duplicate filtering state
