@@ -142,7 +142,7 @@ class ExcelTableService {
   /// Writes an .xlsx into Downloads (or app storage fallback on Android 11-15) and returns its path.
   Future<String?> saveWorkbook(Excel excel, String prefix) async {
     try {
-      final fileBytes = excel.save();
+      final fileBytes = await compute(_saveWorkbookIsolate, excel);
       if (fileBytes == null) return null;
       final fileName = '${prefix}_${DateTime.now().millisecondsSinceEpoch}.xlsx';
       return await ExternalActions.saveBytesWithFallback(fileBytes, fileName);
@@ -153,27 +153,59 @@ class ExcelTableService {
   }
 
   Future<String?> exportMatchResult(TwoFileMatchResult r) async {
-    final excel = Excel.createExcel();
     const name = 'اللوحات_المشتركة';
-    final def = excel.getDefaultSheet();
-    if (def != null) excel.rename(def, name);
-    final ws = excel[name];
-    ws.appendRow(r.headers.map((h) => TextCellValue(h)).toList());
-    for (final row in r.matchedRows) {
-      ws.appendRow(row.map((c) => TextCellValue(c)).toList());
-    }
-    if (r.notFoundPlates.isNotEmpty) {
-      final ws2 = excel['غير_موجودة_بالداتا'];
-      ws2.appendRow([TextCellValue('اللوحة')]);
-      for (final pl in r.notFoundPlates) {
-        ws2.appendRow([TextCellValue(pl)]);
-      }
-    }
-    return saveWorkbook(excel, 'Saqr_Al_Mamlaka_المشتركة');
+
+      const notFoundSheet = 'غير_موجودة_بالداتا' ;
+      const notFoundHeader = 'اللوحة';
+
+    const prefix =  'Saqr_Al_Mamlaka_المشتركة';
+try {
+final fileBytes = await compute(_exportMatchResultIsolate, <String, dynamic>{
+'headers': r.headers,
+'matchedRows': r.matchedRows,
+'notFoundPlates': r.notFoundPlates,
+'sheetName': name,
+'notFoundSheet': notFoundSheet,
+'notFoundHeader': notFoundHeader,
+});
+if (fileBytes == null) return null;
+final fileName = '${prefix}_${DateTime.now().millisecondsSinceEpoch}.xlsx';
+return await ExternalActions.saveBytesWithFallback(fileBytes, fileName);
+} catch (e) {
+debugPrint('exportMatchResult error: $e');
+return null;
+}
   }
 }
 
 // ───────────────────────── isolate helpers (top-level) ─────────────────────────
+
+
+List<int>? _exportMatchResultIsolate(Map<String, dynamic> args) {
+final headers = List<String>.from(args['headers'] as List);
+final matchedRows = (args['matchedRows'] as List).map((r) => List<String>.from(r as List)).toList();
+final notFoundPlates = List<String>.from(args['notFoundPlates'] as List);
+final sheetName = args['sheetName'] as String;
+final notFoundSheet = args['notFoundSheet'] as String;
+final notFoundHeader = args['notFoundHeader'] as String;
+final excel = Excel.createExcel();
+final def = excel.getDefaultSheet();
+if (def != null) excel.rename(def, sheetName);
+final ws = excel[sheetName];
+ws.appendRow(headers.map((h) => TextCellValue(h)).toList());
+for (final row in matchedRows) {
+ws.appendRow(row.map((c) => TextCellValue(c)).toList());
+}
+if (notFoundPlates.isNotEmpty) {
+final ws2 = excel[notFoundSheet];
+ws2.appendRow([TextCellValue(notFoundHeader)]);
+for (final pl in notFoundPlates) {
+ws2.appendRow([TextCellValue(pl)]);
+}
+}
+return excel.save();
+}
+List<int>? _saveWorkbookIsolate(Excel excel) => excel.save();
 
 Map<String, dynamic> _tableToMap(ExcelTable t) => {
       'headers': t.headers,
