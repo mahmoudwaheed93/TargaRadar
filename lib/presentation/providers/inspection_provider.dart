@@ -68,6 +68,7 @@ class InspectionProvider extends ChangeNotifier {
   Timer? _ticker;
   LocationDetails? _lastKnownLocation;
   bool _locRefreshing = false;
+  DateTime? _lastAlertAt;
   DateTime? _locAt;
 
   Timer? _incompletePlateTimer;
@@ -271,7 +272,7 @@ class InspectionProvider extends ChangeNotifier {
         );
         _entries[0] = updated;
         _entriesVersion++;
-        if (updated.inSheet && !prev.inSheet) onMatch(updated);
+        if (updated.inSheet && !prev.inSheet) { _lastAlertAt = DateTime.now(); onMatch(updated); }
         notifyListeners();
         return;
       }
@@ -296,7 +297,7 @@ class InspectionProvider extends ChangeNotifier {
     );
     _entries.insert(0, entry);
     _entriesVersion++;
-    if (entry.inSheet) onMatch(entry);
+    if (entry.inSheet) { _lastAlertAt = DateTime.now(); onMatch(entry); }
     notifyListeners();
   }
 
@@ -324,6 +325,7 @@ class InspectionProvider extends ChangeNotifier {
       onError: onError,
       // Inspection mode strictly tracks plates only (never voice notes)
       onResult: (raw, plates, slots, normalized, isFinal) {
+        if (!isFinal && _lastAlertAt != null && DateTime.now().difference(_lastAlertAt!).inMilliseconds < 350 && plates.isEmpty && !RegExp(r'[0-9\u0660-\u0669]').hasMatch(normalized)) return;
         if (raw.length < _lastProcessedTranscript.length) {
           _lastProcessedTranscript = '';
         }
