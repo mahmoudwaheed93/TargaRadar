@@ -159,12 +159,6 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
         _watchdogTimer?.cancel();
         return;
       }
-      final silenceLimit = _hasSpokenInSession ? _postSpeechSilence : _initialIdleSilence;
-      if (DateTime.now().difference(_lastSpeechActivityAt) >= silenceLimit) {
-        debugPrint('Speech watchdog: ${silenceLimit.inSeconds}s continuous silence -> auto-stopping mic.');
-        unawaited(stopListening(notifyDone: true));
-        return;
-      }
       if (!_speech.isListening && !_isStarting && !(_restartTimer?.isActive ?? false)) {
         debugPrint('Speech watchdog reviving idle recognizer');
         _listen();
@@ -196,14 +190,9 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
       delayMs = backoff[idx];
     }
 
-    _restartTimer = Timer(Duration(milliseconds: delayMs), () {
+    _restartTimer = Timer(Duration(milliseconds: delayMs), ()async  {
       _restartScheduledForSession = -1;
-      if (!_wantListening || _isStarting) return;
-      if (!_speech.isListening) {
-        _listen();
-      } else {
-        _scheduleRestart(isError: false, forcedDelayMs: 40);
-      }
+      if (!_wantListening || _isStarting) return; if (_speech.isListening) { try { await _speech.stop(); } catch (_) {} } if (!_wantListening || _isStarting) return; _listen();
     });
   }
 
@@ -269,9 +258,8 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
       debugPrint('Error during speech listen: $e');
       if (_useOnDevice && _isMissingOfflineModelError(e.toString())) {
         _useOnDevice = false;
-        _onFallbackToCloud?.call();
-      }
-      needFallback = true;
+        _onFallbackToCloud?.call(); if (_wantListening) _scheduleRestart(isError: false, forcedDelayMs: 0);
+      } else { needFallback = true; }
     } finally {
       _isStarting = false;
     }
