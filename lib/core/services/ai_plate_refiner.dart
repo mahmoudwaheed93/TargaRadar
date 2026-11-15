@@ -90,8 +90,8 @@ class AiPlateRefiner {
   /// trigger AI hallucinations on long voice sessions.
   static String _trimToRecentTail(String text) {
     final words = text.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
-    if (words.length <= 8) return text.trim();
-    return words.sublist(words.length - 8).join(' ');
+    if (words.length <= 16) return text.trim();
+    return words.sublist(words.length - 16).join(' ');
   }
 
   Future<List<ParsedPlateData>?> _queryProvider({
