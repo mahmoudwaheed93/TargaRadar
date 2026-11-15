@@ -85,7 +85,7 @@ class AiPlateRefiner {
   final http.Client _client = http.Client();
   final Map<String, List<ParsedPlateData>> _cache = {};
   final Set<String> _inFlight = {};
-
+int _requestId = 0;
   /// Bounds prompt size to the latest ~8 words so accumulated noise cannot
   /// trigger AI hallucinations on long voice sessions.
   static String _trimToRecentTail(String text) {
@@ -146,6 +146,7 @@ class AiPlateRefiner {
   }
 
   Future<List<ParsedPlateData>> refine(String rawTranscript) async {
+    final myReq = ++_requestId;
     await _ensureInit();
     if (!isEnabled) return const [];
     final bounded = _trimToRecentTail(rawTranscript);
@@ -168,7 +169,7 @@ class AiPlateRefiner {
         );
       }
 
-      // Automatic fallback to Hugging Face Router if Groq failed/timed out or is unconfigured
+            if (myReq != _requestId) return const [];// Automatic fallback to Hugging Face Router if Groq failed/timed out or is unconfigured
       if (plates == null && kHuggingFaceToken.isNotEmpty) {
         plates = await _queryProvider(
           url: _hfEndpoint,
@@ -184,6 +185,7 @@ class AiPlateRefiner {
         if (_cache.length >= _maxCache) _cache.remove(_cache.keys.first);
         _cache[key] = finalPlates;
       }
+      if (myReq != _requestId) return const [];
       return finalPlates;
     } finally {
       _inFlight.remove(key);
