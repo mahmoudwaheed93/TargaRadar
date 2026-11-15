@@ -22,17 +22,10 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
   Timer? _restartTimer;
   Timer? _watchdogTimer;
 
-  DateTime _lastSpeechActivityAt = DateTime.now();
   String _lastObservedWords = '';
-  bool _hasSpokenInSession = false;
   int _session = 0;
   int _restartScheduledForSession = -1;
   int _consecutiveErrors = 0;
-
-  // Auto-stop shortly after speaker goes silent so the mic never stays stuck open:
-  // 6s after at least one utterance has been spoken, or 10s if completely idle.
-  static const Duration _postSpeechSilence = Duration(seconds: 6);
-  static const Duration _initialIdleSilence = Duration(seconds: 10);
 
   @override
   SpeechEngineType get activeEngine => SpeechEngineType.platformRecognizer;
@@ -241,8 +234,6 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
             final trimmed = result.recognizedWords.trim();
             if (trimmed.isNotEmpty && trimmed != _lastObservedWords) {
               _lastObservedWords = trimmed;
-              _hasSpokenInSession = true;
-              _lastSpeechActivityAt = DateTime.now();
             }
             _onResult?.call(candidates, result.finalResult);
           }
@@ -291,10 +282,8 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
     _onFallbackToCloud = onFallbackToCloud;
     _wantListening = true;
     _useOnDevice = preferOnDevice;
-    _hasSpokenInSession = false;
     _consecutiveErrors = 0;
     _restartScheduledForSession = -1;
-    _lastSpeechActivityAt = DateTime.now();
     unawaited(_setBeepSuppressed(true));
     _startWatchdog();
     await _listen();
