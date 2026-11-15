@@ -94,13 +94,13 @@ class DatabaseHelper {
     );
   }
 
-  Future<List<CarRecord>> getAllCarRecords() async {
+  Future<List<CarRecord>> getAllCarRecords({int? limit, int? offset}) async {
     final db = await database;
     final result = await db.query(
       'car_records',
       where: 'user_id = ?',
       whereArgs: [currentUserId],
-      orderBy: 'registration_date DESC',
+      orderBy: 'registration_date DESC', limit: limit, offset: offset,
     );
     return result.map((json) => CarRecord.fromMap(json)).toList();
   }
