@@ -9,6 +9,7 @@ import '../../core/services/sound_alert_service.dart';
 import '../../core/services/speech_service.dart';
 import '../../core/services/voice_telemetry_logger.dart';
 import '../../core/utils/date_formatter.dart';
+class _ReferenceIndexResult { final Map<String, int> index; final Map<String, List<int>> byDigits; const _ReferenceIndexResult(this.index, this.byDigits); } _ReferenceIndexResult _buildReferenceIndexesIsolate(Map<String, dynamic> args) { final rows = args['rows'] as List; final plateCol = args['plateCol'] as int; final index = <String, int>{}; final byDigits = <String, List<int>>{}; for (int i = 0; i < rows.length; i++) { final k = ArabicVoiceNormalizer.plateKey(rows[i][plateCol].toString()); if (k.isNotEmpty) { index.putIfAbsent(k, () => i); final d = k.replaceAll(RegExp(r'[^\d]'), ''); if (d.length >= 3) { byDigits.putIfAbsent(d, () => <int>[]).add(i); } } } return _ReferenceIndexResult(index, byDigits); }
 
 /// One plate heard during an inspection session.
 class InspectionEntry {
@@ -71,8 +72,8 @@ class InspectionProvider extends ChangeNotifier {
 
   Timer? _incompletePlateTimer;
   Timer? _aiTimer;
-  static const Duration _aiDebounce = Duration(milliseconds: 250);
-  static const Duration _threeDigitCloseDebounce = Duration(milliseconds: 160);
+  static const Duration _aiDebounce = Duration(milliseconds: 120);
+  static const Duration _threeDigitCloseDebounce = Duration(milliseconds: 350);
   VoidCallback? _pendingIncompletePlate;
   DateTime? _lastIngestedAt;
   String _lastProcessedTranscript = '';
@@ -180,17 +181,7 @@ class InspectionProvider extends ChangeNotifier {
       _table = table;
       _refFileName = picked.name;
       _index.clear();
-      _byDigits.clear();
-      for (int i = 0; i < table.rows.length; i++) {
-        final k = ArabicVoiceNormalizer.plateKey(table.rows[i][table.plateCol]);
-        if (k.isNotEmpty) {
-          _index.putIfAbsent(k, () => i);
-          final d = k.replaceAll(RegExp(r'[^\d]'), '');
-          if (d.length >= 3) {
-            _byDigits.putIfAbsent(d, () => <int>[]).add(i);
-          }
-        }
-      }
+  _byDigits.clear(); final idxResult = await compute(_buildReferenceIndexesIsolate, {'rows': table.rows, 'plateCol': table.plateCol}); _index.addAll(idxResult.index); _byDigits.addAll(idxResult.byDigits);
       for (int i = 0; i < _entries.length; i++) {
         final e = _entries[i];
         final row = _rowFor(e.key);
