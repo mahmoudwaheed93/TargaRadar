@@ -86,12 +86,12 @@ class AiPlateRefiner {
   final Map<String, List<ParsedPlateData>> _cache = {};
   final Set<String> _inFlight = {};
 
-  /// Bounds prompt size to the latest ~14 words so accumulated noise cannot
+  /// Bounds prompt size to the latest ~8 words so accumulated noise cannot
   /// trigger AI hallucinations on long voice sessions.
   static String _trimToRecentTail(String text) {
     final words = text.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
-    if (words.length <= 14) return text.trim();
-    return words.sublist(words.length - 14).join(' ');
+    if (words.length <= 8) return text.trim();
+    return words.sublist(words.length - 8).join(' ');
   }
 
   Future<List<ParsedPlateData>?> _queryProvider({
