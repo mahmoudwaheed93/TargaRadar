@@ -570,7 +570,9 @@ class ArabicVoiceNormalizer {
         } else {
           incompatible = true;
           break;
-        } if (incompatible || score < (digitCandidates.length == 1 ? 8 : 10)) continue;
+        }
+      }
+      if (incompatible || score < (digitCandidates.length == 1 ? 8 : 10)) continue;
       if (score > bestScore) {
         bestScore = score;
         winnerIdx = rowIdx;
