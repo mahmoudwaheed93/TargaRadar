@@ -425,7 +425,7 @@ class InspectionProvider extends ChangeNotifier {
               ? ArabicVoiceNormalizer.finalizeThreeDigitPlate(p)
               : p;
           final k = ArabicVoiceNormalizer.plateKey(closed.fullPlate);
-          final wasSeen = _seen.contains(k);
+          final wasSeen = _seenAt.containsKey(k);
           _ingestInspectionPlate(closed, (entry) {
             if (!wasSeen) matchedCount++;
             onMatch(entry);
@@ -435,9 +435,9 @@ class InspectionProvider extends ChangeNotifier {
       }
 
       final key = ArabicVoiceNormalizer.plateKey(trimmed);
-      if (key.isEmpty || _seen.contains(key)) continue;
+      if (key.isEmpty || _seenAt.containsKey(key)) continue;
 
-      _seen.add(key);
+      _seenAt[key] = DateTime.now();
       _lastKey = key;
       _lastIngestedAt = DateTime.now();
 
@@ -509,7 +509,7 @@ class InspectionProvider extends ChangeNotifier {
     final i = _entries.indexWhere((e) => e.id == id);
     if (i == -1) return;
     final removedKey = _entries[i].key;
-    _seen.remove(removedKey);
+    _seenAt.remove(removedKey);
     _entries.removeAt(i);
     if (_lastKey == removedKey) {
       _lastKey = _entries.isNotEmpty ? _entries.first.key : null;
@@ -521,7 +521,7 @@ class InspectionProvider extends ChangeNotifier {
 
   void clearSession() {
     _entries.clear();
-    _seen.clear();
+    _seenAt.clear();
     _lastKey = null;
     _lastIngestedAt = null;
     _currentTranscript = '';
