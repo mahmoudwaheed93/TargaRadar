@@ -65,7 +65,8 @@ class CarRecordProvider extends ChangeNotifier {
   String? _lastKey;
   int _orphanSession = -1;
   String? _orphanTarget;
-
+  void _safeNotify() { if (!_disposed) notifyListeners(); }
+  
   bool _locRefreshing = false;
   DateTime? _locAt;
 
@@ -203,7 +204,7 @@ class CarRecordProvider extends ChangeNotifier {
       if (!_recorderLoadCompleter.isCompleted) {
         _recorderLoadCompleter.complete();
       }
-      notifyListeners();
+      _safeNotify();
     }
   }
 
@@ -216,7 +217,7 @@ class CarRecordProvider extends ChangeNotifier {
 
   Future<void> setRecorderName(String name) async {
     _recorderName = name;
-    notifyListeners();
+    _safeNotify();
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_recorderKey, name);
@@ -242,7 +243,7 @@ class CarRecordProvider extends ChangeNotifier {
 
   Future<void> loadRecords() async {
     _isLoading = true;
-    notifyListeners();
+    _safeNotify();
 
     try {
       final loaded = await _dbHelper.getAllCarRecords();
@@ -267,7 +268,7 @@ class CarRecordProvider extends ChangeNotifier {
       debugPrint('Error loading car records: $e');
     } finally {
       _isLoading = false;
-      notifyListeners();
+      _safeNotify();
     }
   }
 
@@ -302,7 +303,7 @@ class CarRecordProvider extends ChangeNotifier {
     unawaited(_refreshLocation());
     unawaited(SoundAlertService.instance.warmUp());
     _startTimer();
-    notifyListeners();
+    _safeNotify();
 
     await _speechService.startListening(
       onOrphanNote: _handleOrphanNote,
@@ -373,7 +374,7 @@ class CarRecordProvider extends ChangeNotifier {
               _pendingIncompletePlate = null;
               if (!_isListening || flush == null) return;
               flush();
-              notifyListeners();
+              _safeNotify();
             });
           }
         }
@@ -399,7 +400,7 @@ class CarRecordProvider extends ChangeNotifier {
         _stitcher.reset();
         _isListening = false;
         _stopTimer();
-        notifyListeners();
+        _safeNotify();
       },
     );
   }
@@ -606,7 +607,7 @@ class CarRecordProvider extends ChangeNotifier {
           _recordByKey[finalNorm] = _records[idx];
           _recordsVersion++;
           _recentRecords = _records.take(10).toList();
-          notifyListeners();
+          _safeNotify();
         }
         final pending = _pendingUpdates.remove(finalNorm) ?? _pendingUpdates.remove(effectiveNorm);
         if (pending != null) {
@@ -673,7 +674,7 @@ class CarRecordProvider extends ChangeNotifier {
       for (final p in plates) {
         _ingestPlate(p, sortAuditProvider, onPlateAdded);
       }
-      if (plates.isNotEmpty) notifyListeners();
+      if (plates.isNotEmpty) _safeNotify();
     });
   }
 
@@ -735,7 +736,7 @@ class CarRecordProvider extends ChangeNotifier {
 
       onPlateAdded(trimmed, auditLog.isMatched, auditLog.carType);
     }
-    notifyListeners();
+    _safeNotify();
     return matchedCount;
   }
 
@@ -746,14 +747,14 @@ class CarRecordProvider extends ChangeNotifier {
     await _speechService.stopListening();
     _isListening = false;
     _stopTimer();
-    notifyListeners();
+    _safeNotify();
   }
 
   void _startTimer() {
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
       _listeningTimer++;
-      notifyListeners();
+      _safeNotify();
     });
   }
 
@@ -776,7 +777,7 @@ class CarRecordProvider extends ChangeNotifier {
     if (plateNumber.trim().isEmpty) return false;
 
     _isSaving = true;
-    notifyListeners();
+    _safeNotify();
 
     try {
       final location = _lastKnownLocation;
@@ -819,7 +820,7 @@ class CarRecordProvider extends ChangeNotifier {
       return false;
     } finally {
       _isSaving = false;
-      notifyListeners();
+      _safeNotify();
     }
   }
 
@@ -830,7 +831,7 @@ class CarRecordProvider extends ChangeNotifier {
     }
 
     _isExporting = true;
-    notifyListeners();
+    _safeNotify();
 
     try {
       return await _excelService.exportCarRecordsToExcel(_records);
@@ -839,7 +840,7 @@ class CarRecordProvider extends ChangeNotifier {
       return null;
     } finally {
       _isExporting = false;
-      notifyListeners();
+      _safeNotify();
     }
   }
 
@@ -869,7 +870,7 @@ class CarRecordProvider extends ChangeNotifier {
         ArabicVoiceNormalizer.plateKey(r.plateNumber) == key);
     _recordsVersion++;
     _recentRecords = _records.take(10).toList();
-    notifyListeners();
+    _safeNotify();
 
     if (resolvedId != null) {
       await _dbHelper.deleteCarRecord(resolvedId);
@@ -907,7 +908,7 @@ class CarRecordProvider extends ChangeNotifier {
     _lastMatchResult = null;
     _currentTranscript = '';
     _stitcher.reset();
-    notifyListeners();
+    _safeNotify();
   }
 
   @override
