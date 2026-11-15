@@ -72,7 +72,7 @@ class InspectionProvider extends ChangeNotifier {
 
   Timer? _incompletePlateTimer;
   Timer? _aiTimer;
-  static const Duration _aiDebounce = Duration(milliseconds: 120);
+  static const Duration _aiDebounce = Duration(milliseconds: 80);
   static const Duration _threeDigitCloseDebounce = Duration(milliseconds: 350);
   VoidCallback? _pendingIncompletePlate;
   DateTime? _lastIngestedAt;
@@ -351,7 +351,9 @@ class InspectionProvider extends ChangeNotifier {
         for (final p in completePlates) {
           _ingestInspectionPlate(p, onMatch);
         }
-
+        if (completePlates.isNotEmpty && effectivePlates.last.isComplete) {
+          _stitcher.clearPending();
+        }
         // 2. Trailing 3-digit plate: wait 350ms for optional 4th digit; else pad '0' & close
         _incompletePlateTimer?.cancel();
         _pendingIncompletePlate = null;
