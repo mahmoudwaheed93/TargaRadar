@@ -62,7 +62,7 @@ class InspectionProvider extends ChangeNotifier {
   String? _error;
 
   final List<InspectionEntry> _entries = [];
-  final Set<String> _seen = {};
+  final Map<String, DateTime> _seenAt = {};
   bool _isListening = false;
   int _timer = 0;
   Timer? _ticker;
@@ -130,7 +130,7 @@ class InspectionProvider extends ChangeNotifier {
     _refFileName = '';
     _error = null;
     _entries.clear();
-    _seen.clear();
+      _seenAt.clear();  
     _lastKey = null;
     _lastIngestedAt = null;
     _lastProcessedTranscript = '';
@@ -244,10 +244,9 @@ class InspectionProvider extends ChangeNotifier {
       }
     }
 
-    if (_seen.contains(key)) {
-      _lastKey = key;
-      _lastIngestedAt = DateTime.now();
-      return;
+    final prevSeenAt = _seenAt[key];
+    if (prevSeenAt != null && DateTime.now().difference(prevSeenAt).inSeconds < 10) {
+            return;
     }
 
     if (_entries.isNotEmpty &&
@@ -255,8 +254,8 @@ class InspectionProvider extends ChangeNotifier {
         DateTime.now().difference(_lastIngestedAt!).inSeconds <= 5) {
       final prev = _entries.first;
       if (ArabicVoiceNormalizer.isPlateUpgrade(prev.plate, resolvedPlate)) {
-        _seen.remove(prev.key);
-        _seen.add(key);
+        _seenAt.remove(prev.key);
+        _seenAt[key] = DateTime.now();
         _lastKey = key;
         _lastIngestedAt = DateTime.now();
         final row = _rowFor(key);
@@ -278,7 +277,7 @@ class InspectionProvider extends ChangeNotifier {
       }
     }
 
-    _seen.add(key);
+    _seenAt[key] = DateTime.now();
     _lastKey = key;
     _lastIngestedAt = DateTime.now();
     VoiceTelemetryLogger.instance.logPlateCommitted(resolvedPlate, source: 'inspection');
@@ -307,6 +306,7 @@ class InspectionProvider extends ChangeNotifier {
   }) async {
     unawaited(_refreshLocation());
     unawaited(SoundAlertService.instance.warmUp());
+      unawaited(AiPlateRefiner.instance.getGroqToken());
     if (_isListening) return;
     _isListening = true;
     _currentTranscript = '';
