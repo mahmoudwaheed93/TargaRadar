@@ -97,6 +97,7 @@ class AuthService {
         email: email,
         password: password,
       );
+           await cred.user?.updateDisplayName(userDocId);
       if (cred.user != null) return cred.user!;
     } on FirebaseAuthException catch (e) {
       if (e.code == 'weak-password') {
@@ -106,6 +107,7 @@ class AuthService {
             email: email,
             password: fallback,
           );
+  await cred.user?.updateDisplayName(userDocId);
           if (cred.user != null) return cred.user!;
         } on FirebaseAuthException catch (e2) {
           if (e2.code != 'email-already-in-use') rethrow;
