@@ -16,7 +16,7 @@ class AiPlateRefiner {
 
   // Primary High-Accuracy Ultra-Fast Engine: Groq LPU (Qwen 3.8 27B, reasoning disabled)
   static const String _groqEndpoint = 'https://api.groq.com/openai/v1/chat/completions';
-  static const String _groqModel = 'qwen/qwen3.8-27b';
+  static const String _groqModel = 'llama-3.1-8b-instant';
 
   // Fallback Engine: Hugging Face Router
   static const String _hfEndpoint = 'https://router.huggingface.co/v1/chat/completions';
@@ -65,7 +65,7 @@ class AiPlateRefiner {
   String get model => usesGroq ? _groqModel : _hfModel;
   String get token => usesGroq ? effectiveGroqToken : kHuggingFaceToken;
 
-  static const Duration _timeout = Duration(milliseconds: 2200);
+  static const Duration _timeout = Duration(milliseconds: 900);
   static const int _maxCache = 200;
 
   static const String _systemPrompt =
@@ -107,7 +107,6 @@ class AiPlateRefiner {
         'model': modelName,
         'temperature': 0,
         'max_tokens': 90,
-        if (isGroq) 'reasoning_effort': 'none',
         'messages': [
           {'role': 'system', 'content': _systemPrompt},
           {'role': 'user', 'content': input},
@@ -126,7 +125,7 @@ class AiPlateRefiner {
           .timeout(_timeout);
 
       if (res.statusCode != 200) {
-        debugPrint('AI refine HTTP ${res.statusCode} (${isGroq ? "Groq" : "HF"})');
+        debugPrint('AI refine HTTP ${res.statusCode} (${isGroq ? "Groq" : "HF"}): ${res.body}');
         return null;
       }
 
