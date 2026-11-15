@@ -191,7 +191,7 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
       delayMs = 0;
     } else {
       _consecutiveErrors++;
-      const backoff = [40, 120, 300, 600, 1000, 1500];
+      const backoff = [0, 30, 100, 300, 600, 1000];
       final idx = (_consecutiveErrors - 1).clamp(0, backoff.length - 1);
       delayMs = backoff[idx];
     }
