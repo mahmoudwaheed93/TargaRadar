@@ -11,7 +11,8 @@ class ExcelExportService {
   /// Export list of CarRecords to an Excel (.xlsx) file
   Future<String?> exportCarRecordsToExcel(List<CarRecord> records) async {
     try {
-      final excel = Excel.createExcel();
+ final fileBytes = await compute((List<CarRecord> records) {
+   final excel = Excel.createExcel();
       const sheetName = 'سجل_السيارات';
 
       final defaultSheet = excel.getDefaultSheet();
@@ -26,7 +27,8 @@ class ExcelExportService {
         sheet.appendRow(records[i].toExcelRow(rowIndex: i + 1));
       }
 
-      final fileBytes = excel.save();
+  return excel.save();
+  }, records); 
       if (fileBytes == null) return null;
 
       final timestamp = DateTime.now().millisecondsSinceEpoch;
@@ -46,8 +48,9 @@ class ExcelExportService {
     required List<AuditedLogItem> auditedLog,
   }) async {
     try {
-      final excel = Excel.createExcel();
-
+  
+final fileBytes = await compute((({List<ExcelVehicleItem> sheetItems, List<AuditedLogItem> auditedLog}) data) {
+  final excel = Excel.createExcel(); final sheetItems = data.sheetItems; final auditedLog = data.auditedLog;
       // Sheet 1: Matched sheet items
       const sheet1Name = 'تقرير_مطابقة_الشيت';
       final def = excel.getDefaultSheet();
@@ -103,7 +106,8 @@ class ExcelExportService {
         }
       }
 
-      final fileBytes = excel.save();
+  return excel.save();
+  }, (sheetItems: sheetItems, auditedLog: auditedLog));
       if (fileBytes == null) return null;
 
       final timestamp = DateTime.now().millisecondsSinceEpoch;
