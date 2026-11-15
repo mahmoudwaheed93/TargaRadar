@@ -20,7 +20,7 @@ class SpeechService {
   bool _prefLoaded = false;
 
   // Incremental O(1) parsing & early duplicate filtering state
-  String _lastRawPrimary = '';
+  String _lastRawPrimary = ''; String _lastCandidatesKey = '';
   int _lastSessionId = -1;
   int _committedTailOffset = 0;
 
@@ -31,8 +31,7 @@ class SpeechService {
     if (_prefLoaded) return;
     _prefLoaded = true;
     try {
-      final prefs = await SharedPreferences.getInstance();
-      preferOnDeviceNotifier.value = prefs.getBool(_prefOnDeviceKey) ?? true;
+      final prefs = await SharedPreferences.getInstance(); preferOnDeviceNotifier.value = prefs.getBool(_prefOnDeviceKey) ?? false;
     } catch (_) {}
   }
 
@@ -93,17 +92,16 @@ class SpeechService {
         final currentSession = _platformService.session;
         final primaryRaw = candidates.first;
 
-        // Reset incremental window when recognizer starts a fresh session/utterance
-        if (currentSession != _lastSessionId || primaryRaw.length < _lastRawPrimary.length) {
+        // Reset incremental window when recognizer starts a fresh session/utterance 
+        if (currentSession != _lastSessionId || primaryRaw.length < _lastRawPrimary.length || _committedTailOffset >= primaryRaw.length) {
           _lastSessionId = currentSession;
-          _lastRawPrimary = '';
+          _lastRawPrimary = ''; _lastCandidatesKey = '';
           _committedTailOffset = 0;
         }
 
         // Early duplicate-partial filter BEFORE running ArabicVoiceNormalizer
-        if (!isFinal && primaryRaw == _lastRawPrimary) return;
-        _lastRawPrimary = isFinal ? '' : primaryRaw;
-
+      final candidatesKey = candidates.join('|'); if (!isFinal && candidatesKey == _lastCandidatesKey) return; if (isFinal) { _lastRawPrimary = ''; _lastCandidatesKey = ''; _committedTailOffset = 0; } else { _lastRawPrimary = primaryRaw; _lastCandidatesKey = candidatesKey; }
+        
         final sw = kDebugMode ? (Stopwatch()..start()) : null;
         final best = ArabicVoiceNormalizer.selectBestCandidateIncremental(
           candidates,
