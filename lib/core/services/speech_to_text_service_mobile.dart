@@ -39,7 +39,6 @@ class MobileSpeechPlatformService implements SpeechPlatformService {
   static bool _isFatalPermissionError(String errorMsg) {
     final e = errorMsg.toLowerCase();
     return e.contains('permission') ||
-        e.contains('not_available') ||
         e.contains('permanently_denied');
   }
 
